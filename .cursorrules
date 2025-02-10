@@ -46,60 +46,58 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 - Test both success and error cases for message handling
 - Ensure proper error handling in async operations
 
+### JWE Implementation
+- Support both X25519 and NIST curves (P-256, P-384, P-521) for ECDH key agreement
+- Ensure public keys for NIST curves are in uncompressed format
+- Use zeroize trait for secure memory cleanup of sensitive key material
+- Implement proper key derivation using HKDF with appropriate info strings
+- Test key agreement and derivation with all supported curves
+- Ensure proper error handling for invalid key material and formats
+- Validate all base64url-encoded fields during decryption
+- Test both anoncrypt and authcrypt flows with roundtrip encryption/decryption
+- When implementing multiple recipients, ensure each recipient can decrypt with their own key
+- Share protected header and content encryption across all recipients for efficiency
+
 ### Workspace Configuration
 - For Rust 2021 edition projects, explicitly set `workspace.resolver = "2"` in the root Cargo.toml
 - Keep workspace manifest keys minimal, removing unused ones like name, version, etc. when using a virtual manifest
 
 # Scratchpad
 
-## Current Task: Cleaning Up Code Warnings
+## Current Task: Implementing JWE Module
 
 ### Progress
-[X] Fix missing tests module in tap-didcomm-node
-[X] Fix syntax error in plugin.rs
-[X] Fix missing CoreMessage import in node.rs
-[X] Fix type mismatch issues in mock tests
-[X] Fix MockResolver trait implementation
-[X] Add new function for Message in actor.rs
-[X] Clean up unused imports in plugin.rs
-[X] Clean up unused imports in error.rs
-[X] Fix async test issues in actor.rs and node.rs
-[X] Set workspace resolver to version 2
-[X] Remove unused manifest keys from workspace configuration
-
-### Completed
-1. Fixed test runtime errors in actor.rs and node.rs:
-   - Removed block_on usage in async tests
-   - Fixed test_logging_actor and test_receive_message
-2. Added missing sender to test messages
-3. All tests now passing across all crates
-4. Cleaned up unused imports in plugin.rs and error.rs
-5. Updated workspace configuration:
-   - Set resolver to version 2 for Rust 2021 edition compatibility
-   - Removed unused manifest keys from workspace section
+[X] Implement key agreement algorithms (ECDH-ES, ECDH-1PU)
+[X] Add support for NIST curves (P-256, P-384, P-521)
+[X] Implement key wrapping (AES-KW)
+[X] Implement content encryption algorithms
+  [X] AES-256-GCM
+  [X] XChaCha20-Poly1305
+  [X] AES-256-CBC-HMAC-SHA-512
+[X] Create JWE message structure
+[X] Implement encryption (anoncrypt, authcrypt)
+[X] Implement decryption
+[X] Add comprehensive tests
+  [X] Key agreement tests
+  [X] Content encryption tests
+  [X] End-to-end encryption/decryption tests
+  [X] Error handling tests
+[X] Add support for multiple recipients
+  [X] Update JWE message structure
+  [X] Modify encryption methods
+  [X] Enhance decryption to try each recipient
+  [X] Add tests for multiple recipients
 
 ### Next Steps
-All warnings have been resolved and all tests are passing. No further steps needed.
-
-## Current Task: Fixing Test Issues in tap-didcomm-web
-
-### Progress
-[X] Identified test failures in end-to-end message flow
-[X] Fixed mock plugin implementation
-[X] Fix test_end_to_end_message_flow test
-  [X] Update message handling to properly handle base64 encoding/decoding
-  [X] Ensure proper error handling in async operations
-  [X] Verify message flow with updated mock plugin
+1. Add support for APU/APV parameters in key derivation
+2. Add support for compressed NIST curve points
+3. Add more test vectors from RFC 7516
 
 ### Completed
-1. Fixed test_end_to_end_message_flow by properly handling message packing and encoding:
-   - Pack message using mock plugin
-   - Base64 encode packed message
-   - Send to endpoint
-2. All tests now passing
-3. Proper error handling in place
+1. Implemented complete JWE encryption/decryption flow
+2. Added support for all required curves and algorithms
+3. Added comprehensive test suite
+4. Ensured proper error handling and validation
+5. Used secure memory handling for sensitive data
+6. Added support for multiple recipients with shared content encryption
 
-### Next Steps
-1. Clean up unused imports (Message from tap_didcomm_node::actor)
-2. Consider addressing workspace resolver warnings
-3. Consider cleaning up unused manifest keys in Cargo.toml
