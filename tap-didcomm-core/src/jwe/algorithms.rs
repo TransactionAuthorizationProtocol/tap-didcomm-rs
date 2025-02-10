@@ -1,4 +1,18 @@
-//! Cryptographic algorithm implementations for JWE.
+//! Cryptographic algorithms for JWE operations.
+//!
+//! This module provides implementations of the cryptographic algorithms required for
+//! JWE (JSON Web Encryption) in DIDComm v2, including:
+//! - ECDH key agreement (X25519 and NIST curves)
+//! - Key derivation (HKDF)
+//! - Content encryption (AES-GCM, AES-CBC-HMAC, XChaCha20-Poly1305)
+//!
+//! # Security Considerations
+//!
+//! - All key material is automatically zeroized when dropped
+//! - Constant-time operations are used where possible
+//! - Random values use the system's secure random number generator
+//! - Nonce reuse is prevented by using random nonces
+//! - Authentication tags are validated in constant time
 
 use aes::{Aes256, cipher::{KeyInit, BlockEncrypt, BlockDecrypt}};
 use aes_gcm::{
@@ -40,7 +54,19 @@ const HMAC_SHA512_KEY_SIZE: usize = 64;
 /// The size of an authentication tag in bytes.
 const AUTH_TAG_SIZE: usize = 32;
 
-/// Generates a random encryption key of the specified size.
+/// Generates a random key of the specified size.
+///
+/// # Arguments
+///
+/// * `size` - The size of the key in bytes
+///
+/// # Returns
+///
+/// A vector containing the random key bytes.
+///
+/// # Security
+///
+/// Uses the system's secure random number generator.
 pub fn generate_random_key(size: usize) -> Vec<u8> {
     let mut key = vec![0u8; size];
     OsRng.fill_bytes(&mut key);
@@ -48,6 +74,23 @@ pub fn generate_random_key(size: usize) -> Vec<u8> {
 }
 
 /// Performs ECDH key agreement using the specified curve.
+///
+/// # Arguments
+///
+/// * `curve` - The elliptic curve to use
+/// * `private_key` - The private key bytes
+/// * `public_key` - The public key bytes
+///
+/// # Returns
+///
+/// The shared secret bytes.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The key material is invalid
+/// - The curve is not supported
+/// - The key agreement operation fails
 pub fn ecdh_key_agreement(
     curve: EcdhCurve,
     private_key: &[u8],
@@ -61,7 +104,21 @@ pub fn ecdh_key_agreement(
     }
 }
 
-/// Generates an ephemeral key pair for the specified curve.
+/// Generates an ephemeral keypair for the specified curve.
+///
+/// # Arguments
+///
+/// * `curve` - The elliptic curve to use
+///
+/// # Returns
+///
+/// A tuple containing the private and public key bytes.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The curve is not supported
+/// - Key generation fails
 pub fn generate_ephemeral_keypair(curve: EcdhCurve) -> Result<(Vec<u8>, Vec<u8>)> {
     match curve {
         EcdhCurve::X25519 => Ok(generate_x25519_ephemeral()),
@@ -92,6 +149,21 @@ fn generate_x25519_ephemeral() -> (Vec<u8>, Vec<u8>) {
 }
 
 /// Derives a key using HKDF.
+///
+/// # Arguments
+///
+/// * `shared_secret` - The shared secret to derive from
+/// * `salt` - The salt value (should be random)
+/// * `info` - The info string (context information)
+/// * `length` - The desired length of the derived key
+///
+/// # Returns
+///
+/// The derived key bytes.
+///
+/// # Errors
+///
+/// Returns an error if the key derivation fails.
 pub fn derive_key(
     shared_secret: &[u8],
     salt: &[u8],
@@ -122,6 +194,23 @@ pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Encrypts data using AES-GCM.
+///
+/// # Arguments
+///
+/// * `key` - The encryption key (must be 32 bytes)
+/// * `nonce` - The nonce value (must be 12 bytes)
+/// * `aad` - The additional authenticated data
+/// * `plaintext` - The data to encrypt
+///
+/// # Returns
+///
+/// A tuple containing the ciphertext and authentication tag.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The key or nonce length is invalid
+/// - Encryption fails
 pub fn encrypt_aes_gcm(
     key: &[u8],
     nonce: &[u8],
@@ -151,6 +240,25 @@ pub fn encrypt_aes_gcm(
 }
 
 /// Decrypts data using AES-GCM.
+///
+/// # Arguments
+///
+/// * `key` - The decryption key (must be 32 bytes)
+/// * `nonce` - The nonce value (must be 12 bytes)
+/// * `aad` - The additional authenticated data
+/// * `ciphertext` - The data to decrypt
+/// * `tag` - The authentication tag
+///
+/// # Returns
+///
+/// The decrypted data.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The key or nonce length is invalid
+/// - Authentication fails
+/// - Decryption fails
 pub fn decrypt_aes_gcm(
     key: &[u8],
     nonce: &[u8],
@@ -183,6 +291,23 @@ pub fn decrypt_aes_gcm(
 }
 
 /// Encrypts data using XChaCha20-Poly1305.
+///
+/// # Arguments
+///
+/// * `key` - The encryption key (must be 32 bytes)
+/// * `nonce` - The nonce value (must be 24 bytes)
+/// * `aad` - The additional authenticated data
+/// * `plaintext` - The data to encrypt
+///
+/// # Returns
+///
+/// A tuple containing the ciphertext and authentication tag.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The key or nonce length is invalid
+/// - Encryption fails
 pub fn encrypt_xchacha20poly1305(
     key: &[u8],
     nonce: &[u8],
@@ -212,6 +337,25 @@ pub fn encrypt_xchacha20poly1305(
 }
 
 /// Decrypts data using XChaCha20-Poly1305.
+///
+/// # Arguments
+///
+/// * `key` - The decryption key (must be 32 bytes)
+/// * `nonce` - The nonce value (must be 24 bytes)
+/// * `aad` - The additional authenticated data
+/// * `ciphertext` - The data to decrypt
+/// * `tag` - The authentication tag
+///
+/// # Returns
+///
+/// The decrypted data.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The key or nonce length is invalid
+/// - Authentication fails
+/// - Decryption fails
 pub fn decrypt_xchacha20poly1305(
     key: &[u8],
     nonce: &[u8],
@@ -447,7 +591,22 @@ fn generate_p521_ephemeral() -> Result<(Vec<u8>, Vec<u8>)> {
     ))
 }
 
-/// Converts a public key to compressed SEC1 format
+/// Compresses a public key for the specified curve.
+///
+/// # Arguments
+///
+/// * `curve` - The elliptic curve used
+/// * `public_key` - The uncompressed public key bytes
+///
+/// # Returns
+///
+/// The compressed public key bytes.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The curve is not supported
+/// - The public key is invalid
 pub fn compress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<u8>> {
     match curve {
         EcdhCurve::X25519 => Ok(public_key.to_vec()), // X25519 is already compressed
@@ -469,7 +628,22 @@ pub fn compress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<u8
     }
 }
 
-/// Decompresses a public key from SEC1 format (handles both compressed and uncompressed)
+/// Decompresses a public key for the specified curve.
+///
+/// # Arguments
+///
+/// * `curve` - The elliptic curve used
+/// * `public_key` - The compressed public key bytes
+///
+/// # Returns
+///
+/// The uncompressed public key bytes.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The curve is not supported
+/// - The public key is invalid
 pub fn decompress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<u8>> {
     match curve {
         EcdhCurve::X25519 => Ok(public_key.to_vec()), // X25519 is already compressed

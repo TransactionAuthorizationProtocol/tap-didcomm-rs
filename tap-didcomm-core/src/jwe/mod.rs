@@ -1,7 +1,46 @@
-//! JWE (JSON Web Encryption) implementation for DIDComm v2.
-//! 
-//! This module provides the core JWE functionality required for DIDComm message encryption,
-//! supporting both anoncrypt (ECDH-ES+A256KW) and authcrypt (ECDH-1PU+A256KW) modes.
+//! JWE (JSON Web Encryption) implementation for DIDComm.
+//!
+//! This module provides a complete implementation of JWE for DIDComm v2,
+//! supporting both anoncrypt and authcrypt modes, multiple recipients,
+//! and various key agreement and content encryption algorithms.
+//!
+//! The implementation follows RFC 7516 (JSON Web Encryption) and includes
+//! support for the algorithms required by the DIDComm v2 specification.
+//!
+//! # Features
+//!
+//! - Support for ECDH-ES+A256KW and ECDH-1PU+A256KW key agreement
+//! - Multiple content encryption algorithms (A256CBC-HS512, A256GCM, XC20P)
+//! - Support for X25519 and NIST curves (P-256, P-384, P-521)
+//! - Multiple recipient support with shared content encryption
+//! - APU/APV parameter support in key derivation
+//! - Compressed NIST curve point support
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! use tap_didcomm_core::jwe::{JweMessage, ContentEncryptionAlgorithm, EcdhCurve};
+//!
+//! async fn example(resolver: impl DIDResolver) {
+//!     let plaintext = b"Hello, DIDComm!";
+//!     let recipient = "did:example:bob";
+//!     let sender = Some("did:example:alice");
+//!
+//!     // Encrypt a message
+//!     let jwe = JweMessage::encrypt(
+//!         plaintext,
+//!         recipient,
+//!         sender,
+//!         &resolver,
+//!         ContentEncryptionAlgorithm::A256Gcm,
+//!         EcdhCurve::X25519,
+//!     ).await.unwrap();
+//!
+//!     // Decrypt the message
+//!     let decrypted = jwe.decrypt(recipient_private_key, &resolver).await.unwrap();
+//!     assert_eq!(plaintext.to_vec(), decrypted);
+//! }
+//! ```
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -16,7 +55,16 @@ pub mod algorithms;
 pub mod error;
 pub mod header;
 
-/// Supported key agreement algorithms for DIDComm v2.
+/// Key agreement algorithms supported for JWE.
+///
+/// These algorithms are used to establish shared secrets between
+/// the sender and recipient(s) of an encrypted message.
+///
+/// # Security Considerations
+///
+/// - ECDH-ES+A256KW provides anonymous encryption (anoncrypt)
+/// - ECDH-1PU+A256KW provides authenticated encryption (authcrypt)
+/// - Both use AES key wrapping for the content encryption key
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum KeyAgreementAlgorithm {
@@ -27,6 +75,16 @@ pub enum KeyAgreementAlgorithm {
 }
 
 /// Content encryption algorithms supported for JWE.
+///
+/// These algorithms are used to encrypt the actual message content
+/// using the key derived from the key agreement process.
+///
+/// # Security Considerations
+///
+/// - A256CBC-HS512 provides authenticated encryption with HMAC
+/// - A256GCM provides authenticated encryption with GCM
+/// - XC20P (XChaCha20-Poly1305) provides authenticated encryption
+///   with modern ChaCha20-Poly1305
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ContentEncryptionAlgorithm {
@@ -38,7 +96,16 @@ pub enum ContentEncryptionAlgorithm {
     Xc20P,
 }
 
-/// ECDH curves supported for key agreement.
+/// Elliptic curves supported for ECDH key agreement.
+///
+/// Both NIST curves and modern curves (X25519) are supported
+/// to ensure broad compatibility and high security.
+///
+/// # Security Considerations
+///
+/// - X25519 is recommended for best security and performance
+/// - NIST curves are supported for compatibility
+/// - All curves provide at least 128 bits of security
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum EcdhCurve {
@@ -52,22 +119,55 @@ pub enum EcdhCurve {
     P521,
 }
 
-/// A JWE object representing an encrypted DIDComm message.
+/// A JWE (JSON Web Encryption) structure.
+///
+/// This represents a complete JWE object with all the components
+/// required by RFC 7516, including protected header, encrypted key,
+/// initialization vector, ciphertext, and authentication tag.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use tap_didcomm_core::jwe::Jwe;
+///
+/// let jwe = Jwe {
+///     protected: "base64url".to_string(),
+///     encrypted_key: "base64url".to_string(),
+///     iv: "base64url".to_string(),
+///     ciphertext: "base64url".to_string(),
+///     tag: "base64url".to_string(),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Jwe {
     /// The protected header (base64url-encoded)
-    protected: String,
+    pub protected: String,
     /// The encrypted key (base64url-encoded)
-    encrypted_key: String,
+    pub encrypted_key: String,
     /// The initialization vector (base64url-encoded)
-    iv: String,
+    pub iv: String,
     /// The ciphertext (base64url-encoded)
-    ciphertext: String,
+    pub ciphertext: String,
     /// The authentication tag (base64url-encoded)
-    tag: String,
+    pub tag: String,
 }
 
 /// Configuration for JWE encryption.
+///
+/// This structure allows customization of the encryption process
+/// by specifying the algorithms and curves to use.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::{EncryptionConfig, KeyAgreementAlgorithm, ContentEncryptionAlgorithm, EcdhCurve};
+///
+/// let config = EncryptionConfig {
+///     key_agreement: KeyAgreementAlgorithm::EcdhEsA256kw,
+///     content_encryption: ContentEncryptionAlgorithm::A256Gcm,
+///     curve: EcdhCurve::X25519,
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct EncryptionConfig {
     /// The key agreement algorithm to use
@@ -79,6 +179,12 @@ pub struct EncryptionConfig {
 }
 
 impl Default for EncryptionConfig {
+    /// Creates a default configuration using recommended algorithms.
+    ///
+    /// Defaults to:
+    /// - ECDH-ES+A256KW for key agreement
+    /// - A256GCM for content encryption
+    /// - X25519 for the ECDH curve
     fn default() -> Self {
         Self {
             key_agreement: KeyAgreementAlgorithm::EcdhEsA256kw,
@@ -88,7 +194,16 @@ impl Default for EncryptionConfig {
     }
 }
 
-/// A wrapper around encryption keys that implements zeroize.
+/// A key used for encryption operations.
+///
+/// This type ensures secure handling of key material by implementing
+/// zeroization on drop.
+///
+/// # Security Considerations
+///
+/// - Key material is automatically zeroized when dropped
+/// - Keys should be generated using cryptographically secure random numbers
+/// - Keys should be stored securely when not in use
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptionKey(pub Vec<u8>);
 
@@ -98,7 +213,30 @@ impl Drop for EncryptionKey {
     }
 }
 
-/// JWE protected header.
+/// A JWE protected header.
+///
+/// Contains the parameters needed for decryption and defines the
+/// cryptographic algorithms used.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::{JweHeader, EphemeralPublicKey};
+///
+/// let header = JweHeader {
+///     alg: "ECDH-ES+A256KW".to_string(),
+///     enc: "A256GCM".to_string(),
+///     epk: Some(EphemeralPublicKey {
+///         kty: "OKP".to_string(),
+///         crv: "X25519".to_string(),
+///         x: "base64url".to_string(),
+///         y: None,
+///     }),
+///     skid: None,
+///     apu: None,
+///     apv: None,
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JweHeader {
     /// Key agreement algorithm
@@ -115,20 +253,49 @@ pub struct JweHeader {
     pub apv: Option<String>,
 }
 
-/// Ephemeral public key for ECDH key agreement.
+/// An ephemeral public key used in the key agreement process.
+///
+/// This structure represents the public key component used in
+/// ECDH key agreement, supporting both compressed and uncompressed
+/// formats for NIST curves.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::EphemeralPublicKey;
+///
+/// // X25519 key
+/// let x25519_key = EphemeralPublicKey {
+///     kty: "OKP".to_string(),
+///     crv: "X25519".to_string(),
+///     x: "base64url".to_string(),
+///     y: None,
+/// };
+///
+/// // NIST P-256 key (uncompressed)
+/// let p256_key = EphemeralPublicKey {
+///     kty: "EC".to_string(),
+///     crv: "P-256".to_string(),
+///     x: "base64url".to_string(),
+///     y: Some("base64url".to_string()),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EphemeralPublicKey {
-    /// Key type (e.g., "OKP" for X25519)
+    /// Key type (e.g., "OKP" for X25519, "EC" for NIST curves)
     pub kty: String,
-    /// Curve used (e.g., "X25519")
+    /// Curve used (e.g., "X25519", "P-256")
     pub crv: String,
-    /// Public key x-coordinate
+    /// Public key x-coordinate (base64url-encoded)
     pub x: String,
-    /// Public key y-coordinate (for NIST curves)
+    /// Public key y-coordinate (base64url-encoded, only for NIST curves)
     pub y: Option<String>,
 }
 
-/// A JWE encrypted message.
+/// A complete JWE message structure.
+///
+/// This represents a JWE in either JSON Serialization or Compact
+/// Serialization format, with support for multiple recipients.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JweMessage {
     /// Protected header (base64url encoded)

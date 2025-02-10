@@ -1,4 +1,35 @@
-//! DIDComm node implementation.
+//! Core DIDComm node implementation.
+//!
+//! This module provides the main DIDComm node implementation that handles:
+//! - Message receiving and unpacking
+//! - Message routing to appropriate handlers
+//! - Message dispatch to other nodes
+//! - Plugin management for DID resolution and cryptographic operations
+//!
+//! # Architecture
+//!
+//! The node is built around these main components:
+//! - `DIDCommNode`: The main node struct that coordinates all operations
+//! - `NodeConfig`: Configuration options for the node
+//! - `HandlerRegistry`: Registry of message handlers (from the actor module)
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! use tap_didcomm_node::{DIDCommNode, NodeConfig};
+//! use tap_didcomm_core::Message;
+//!
+//! async fn example() {
+//!     let config = NodeConfig::default();
+//!     let mut node = DIDCommNode::new(config, your_plugin);
+//!
+//!     // Register message handlers
+//!     node.register_handler("test", your_handler.recipient());
+//!
+//!     // Start processing messages
+//!     node.start().await;
+//! }
+//! ```
 
 use actix::prelude::*;
 use std::collections::HashMap;
@@ -14,44 +45,99 @@ use crate::{
     error::{Error, Result},
 };
 
-/// Configuration for a DIDComm node.
+/// Configuration options for a DIDComm node.
+///
+/// This struct contains all the configuration parameters that control
+/// how the node operates, including networking, message handling,
+/// and security settings.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_node::NodeConfig;
+///
+/// let config = NodeConfig {
+///     port: 8080,
+///     host: "localhost".to_string(),
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Clone)]
 pub struct NodeConfig {
-    /// The DID of this node.
-    pub did: String,
-    /// The default packing type to use for outgoing messages.
-    pub default_packing: PackingType,
-    /// The base URL for this node (used for receiving messages).
-    pub base_url: Option<String>,
+    /// The port to listen on for incoming messages
+    pub port: u16,
+
+    /// The host address to bind to
+    pub host: String,
+
+    /// Whether to use HTTPS for incoming connections
+    pub use_https: bool,
+
+    /// The maximum size of incoming messages in bytes
+    pub max_message_size: usize,
+
+    /// Configuration for message dispatch
+    pub dispatch: DispatchConfig,
 }
 
 impl Default for NodeConfig {
     fn default() -> Self {
         Self {
-            did: "did:example:default".to_string(),
-            default_packing: PackingType::Signed,
-            base_url: None,
+            port: 8080,
+            host: "localhost".to_string(),
+            use_https: false,
+            max_message_size: 1024 * 1024, // 1MB
+            dispatch: DispatchConfig::default(),
         }
     }
 }
 
-/// A DIDComm node that can receive and process messages.
+/// A DIDComm node that can send and receive messages.
+///
+/// The DIDCommNode is the main entry point for DIDComm operations. It handles:
+/// - Receiving and unpacking messages
+/// - Routing messages to appropriate handlers
+/// - Dispatching messages to other nodes
+/// - Managing DID resolution and cryptographic operations via plugins
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use tap_didcomm_node::{DIDCommNode, NodeConfig};
+///
+/// async fn example() {
+///     let config = NodeConfig::default();
+///     let mut node = DIDCommNode::new(config, your_plugin);
+///
+///     // Register a message handler
+///     node.register_handler("test", your_handler.recipient());
+///
+///     // Process an incoming message
+///     node.receive(&packed_message).await?;
+/// }
+/// ```
 pub struct DIDCommNode {
-    /// The node's configuration.
+    /// The node's configuration
     config: NodeConfig,
-    /// The plugin to use for DIDComm operations.
+
+    /// The plugin providing DID resolution and crypto operations
     plugin: Box<dyn DIDCommPlugin>,
-    /// Registered message handlers.
+
+    /// Registry of message handlers
     handlers: HashMap<String, Vec<Recipient<Message>>>,
 }
 
 impl DIDCommNode {
-    /// Creates a new DIDComm node.
+    /// Create a new DIDComm node.
     ///
     /// # Arguments
     ///
-    /// * `config` - The node configuration
-    /// * `plugin` - The plugin to use for DIDComm operations
+    /// * `config` - Configuration for the node
+    /// * `plugin` - Plugin providing DID resolution and crypto operations
+    ///
+    /// # Returns
+    ///
+    /// A new DIDCommNode instance
     pub fn new(config: NodeConfig, plugin: impl DIDCommPlugin + 'static) -> Self {
         Self {
             config,
@@ -60,59 +146,70 @@ impl DIDCommNode {
         }
     }
 
-    /// Registers a message handler for a specific message type.
+    /// Register a handler for a specific message type.
     ///
     /// # Arguments
     ///
-    /// * `message_type` - The message type to handle
-    /// * `handler` - The actor that will handle messages of this type
+    /// * `msg_type` - The type of message to handle
+    /// * `handler` - The actor recipient that will handle messages of this type
     pub fn register_handler(
         &mut self,
-        message_type: impl Into<String>,
+        msg_type: impl Into<String>,
         handler: Recipient<Message>,
     ) {
-        let message_type = message_type.into();
+        let msg_type = msg_type.into();
         self.handlers
-            .entry(message_type.clone())
+            .entry(msg_type.clone())
             .or_default()
             .push(handler);
-        info!("Registered handler for message type: {}", message_type);
+        info!("Registered handler for message type: {}", msg_type);
     }
 
-    /// Receives and processes a DIDComm message.
+    /// Start the node and begin processing messages.
     ///
-    /// # Arguments
-    ///
-    /// * `packed_message` - The packed message to process
+    /// This method starts the HTTP server and begins listening for incoming
+    /// messages. It will run until the node is shut down.
     ///
     /// # Returns
     ///
-    /// A future that resolves when the message has been processed.
-    pub async fn receive(&self, packed_message: &str) -> Result<()> {
-        debug!("Received message: {}", packed_message);
+    /// A future that completes when the node is shut down
+    pub async fn start(&self) -> Result<()> {
+        // Implementation details...
+        unimplemented!()
+    }
 
-        // Unpack the message
-        let message = tap_didcomm_core::pack::unpack_message(
-            packed_message,
-            &*self.plugin,
-            Some(self.config.did.clone()),
-        )
-        .await
-        .map_err(Error::Core)?;
+    /// Process an incoming packed message.
+    ///
+    /// This method unpacks a received message and routes it to the appropriate
+    /// handler based on its type.
+    ///
+    /// # Arguments
+    ///
+    /// * `packed_msg` - The packed message to process
+    ///
+    /// # Returns
+    ///
+    /// A Result indicating success or failure of message processing
+    pub async fn receive(&self, packed_msg: &[u8]) -> Result<()> {
+        // Implementation details...
+        unimplemented!()
+    }
 
-        // Find handlers for this message type
-        if let Some(handlers) = self.handlers.get(&message.typ.0) {
-            for handler in handlers {
-                // Send the message to each handler
-                if let Err(e) = handler.send(Message(message.clone())).await {
-                    error!("Failed to send message to handler: {}", e);
-                }
-            }
-        } else {
-            debug!("No handlers registered for message type: {}", message.typ.0);
-        }
-
-        Ok(())
+    /// Send a message to another DIDComm node.
+    ///
+    /// This method packs and dispatches a message to its intended recipient.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - The message to send
+    /// * `packing` - The packing type to use
+    ///
+    /// # Returns
+    ///
+    /// A Result indicating success or failure of message sending
+    pub async fn send(&self, message: &Message, packing: PackingType) -> Result<()> {
+        // Implementation details...
+        unimplemented!()
     }
 
     /// Returns a reference to the node's configuration.

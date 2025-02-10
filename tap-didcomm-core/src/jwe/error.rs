@@ -1,68 +1,108 @@
-//! Error types for the JWE module.
+//! Error types for JWE operations.
+//!
+//! This module defines the error types that can occur during JWE (JSON Web Encryption)
+//! operations, including key agreement, encryption, decryption, and message processing.
+//! Each error type provides detailed information about what went wrong to help with
+//! debugging and error handling.
 
-use thiserror::Error;
+use std::fmt;
+use std::error::Error as StdError;
+use base64::DecodeError;
 
 /// Result type for JWE operations.
 pub type Result<T> = std::result::Result<T, JweError>;
 
 /// Errors that can occur during JWE operations.
-#[derive(Debug, Error)]
+///
+/// This enum represents all possible errors that can occur when working with
+/// JWE messages, including cryptographic operations, encoding/decoding,
+/// and message validation.
+///
+/// # Examples
+///
+/// ```
+/// use tap_didcomm_core::jwe::error::JweError;
+///
+/// let error = JweError::InvalidKey("Key length must be 32 bytes".to_string());
+/// assert_eq!(
+///     error.to_string(),
+///     "Invalid key: Key length must be 32 bytes"
+/// );
+/// ```
+#[derive(Debug)]
 pub enum JweError {
-    /// Key agreement failed.
-    #[error("Key agreement failed: {0}")]
+    /// Error during key agreement operation
     KeyAgreement(String),
 
-    /// Content encryption failed.
-    #[error("Content encryption failed: {0}")]
-    ContentEncryption(String),
-
-    /// Key wrapping failed.
-    #[error("Key wrapping failed: {0}")]
-    KeyWrap(String),
-
-    /// Invalid header.
-    #[error("Invalid header: {0}")]
+    /// Error processing the JWE header
     Header(String),
 
-    /// Base64url decoding failed.
-    #[error("Base64url decoding failed: {0}")]
-    Base64(&'static str, base64::DecodeError),
+    /// Invalid key material
+    InvalidKey(String),
 
-    /// Invalid key material.
-    #[error("Invalid key material: {0}")]
-    InvalidKeyMaterial(String),
+    /// Error during encryption operation
+    Encryption(String),
 
-    /// Invalid key type.
-    #[error("Invalid key type: {0}")]
-    InvalidKeyType(String),
+    /// Error during decryption operation
+    Decryption(String),
 
-    /// Invalid curve.
-    #[error("Invalid curve: {0}")]
-    InvalidCurve(String),
-
-    /// Unsupported algorithm.
-    #[error("Unsupported algorithm: {0}")]
-    UnsupportedAlgorithm(String),
-
-    /// Missing required field.
-    #[error("Missing required field: {0}")]
-    MissingField(String),
-
-    /// Invalid JWE structure.
-    #[error("Invalid JWE structure: {0}")]
-    InvalidStructure(String),
-
-    /// Authentication failed.
-    #[error("Authentication failed")]
+    /// Authentication failed during decryption
     AuthenticationFailed,
 
-    /// Message tampering detected.
-    #[error("Message tampering detected")]
-    TamperingDetected,
+    /// Base64 encoding/decoding error
+    Base64(&'static str, DecodeError),
 
-    /// DID resolution failed.
-    #[error("DID resolution failed: {0}")]
-    DidResolution(String),
+    /// JSON serialization/deserialization error
+    Serialization(serde_json::Error),
+
+    /// Invalid curve specified for operation
+    InvalidCurve(String),
+
+    /// Invalid algorithm specified for operation
+    InvalidAlgorithm(String),
+
+    /// Invalid message format
+    InvalidFormat(String),
+}
+
+impl fmt::Display for JweError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KeyAgreement(msg) => write!(f, "Key agreement error: {}", msg),
+            Self::Header(msg) => write!(f, "Header error: {}", msg),
+            Self::InvalidKey(msg) => write!(f, "Invalid key: {}", msg),
+            Self::Encryption(msg) => write!(f, "Encryption error: {}", msg),
+            Self::Decryption(msg) => write!(f, "Decryption error: {}", msg),
+            Self::AuthenticationFailed => write!(f, "Authentication failed"),
+            Self::Base64(ctx, err) => write!(f, "Base64 error in {}: {}", ctx, err),
+            Self::Serialization(err) => write!(f, "Serialization error: {}", err),
+            Self::InvalidCurve(msg) => write!(f, "Invalid curve: {}", msg),
+            Self::InvalidAlgorithm(msg) => write!(f, "Invalid algorithm: {}", msg),
+            Self::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
+        }
+    }
+}
+
+impl StdError for JweError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::Base64(_, err) => Some(err),
+            Self::Serialization(err) => Some(err),
+            _ => None,
+        }
+    }
+}
+
+impl From<DecodeError> for JweError {
+    fn from(err: DecodeError) -> Self {
+        Self::Base64("decode", err)
+    }
+}
+
+impl From<serde_json::Error> for JweError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Serialization(err)
+    }
 }
 
 #[cfg(test)]
@@ -71,16 +111,31 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = JweError::KeyAgreement("ECDH failed".to_string());
-        assert_eq!(err.to_string(), "Key agreement failed: ECDH failed");
+        let errors = [
+            (JweError::KeyAgreement("test".into()), "Key agreement error: test"),
+            (JweError::Header("test".into()), "Header error: test"),
+            (JweError::InvalidKey("test".into()), "Invalid key: test"),
+            (JweError::Encryption("test".into()), "Encryption error: test"),
+            (JweError::Decryption("test".into()), "Decryption error: test"),
+            (JweError::AuthenticationFailed, "Authentication failed"),
+            (JweError::InvalidCurve("test".into()), "Invalid curve: test"),
+            (JweError::InvalidAlgorithm("test".into()), "Invalid algorithm: test"),
+            (JweError::InvalidFormat("test".into()), "Invalid format: test"),
+        ];
 
-        let err = JweError::AuthenticationFailed;
-        assert_eq!(err.to_string(), "Authentication failed");
+        for (error, expected) in errors.iter() {
+            assert_eq!(error.to_string(), *expected);
+        }
     }
 
     #[test]
     fn test_error_conversion() {
-        let err = JweError::InvalidKeyMaterial("Invalid key length".to_string());
-        let _: Box<dyn std::error::Error> = Box::new(err);
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let jwe_err = JweError::from(json_err);
+        assert!(matches!(jwe_err, JweError::Serialization(_)));
+
+        let base64_err = base64::engine::general_purpose::STANDARD.decode("invalid").unwrap_err();
+        let jwe_err = JweError::from(base64_err);
+        assert!(matches!(jwe_err, JweError::Base64(_, _)));
     }
 } 

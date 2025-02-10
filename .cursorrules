@@ -20,7 +20,7 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 - Always write idiomatic Rust code.
 - Every new function or module must include comprehensive unit tests.
 - Use Rust's error handling best practices (Result<T, E>, ? operator, etc.).
-- Document all public APIs with rustdoc comments (///).
+- Document all public APIs with comprehensiverustdoc comments (///).
 - Maintain a modular design: keep CAIP, DIDComm, TAP core, and WASM bindings separate.
 - Use cargo fmt and clippy for formatting and linting.
 - Prioritize clear and maintainable code.
