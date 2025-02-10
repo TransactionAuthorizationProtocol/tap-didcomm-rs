@@ -2,7 +2,7 @@
 name = "tap-didcomm-core"
 version = "0.1.0"
 edition = "2021"
-authors = ["NotaBene <info@notabene.id>"]
+authors = ["Pelle Braendgaard <pelle@notabene.id>"]
 license = "MIT"
 description = "Core DIDComm v2 message handling with async signing, encryption, and verification"
 

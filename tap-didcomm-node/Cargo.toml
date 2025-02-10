@@ -2,7 +2,7 @@
 name = "tap-didcomm-node"
 version = "0.1.0"
 edition = "2021"
-authors = ["NotaBene <info@notabene.id>"]
+authors = ["Pelle Braendgaard <pelle@notabene.id>"]
 license = "MIT"
 description = "Abstract DIDComm node implementation with Actix Actor support"
 
@@ -31,10 +31,14 @@ wasm-bindgen-futures = { version = "0.4", optional = true }
 js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", features = ["Window", "Response", "RequestInit", "RequestMode"], optional = true }
 
+# Base64 dependency
+base64 = "0.21"
+
 [dev-dependencies]
 tokio-test = "0.4"
 actix-rt = "2.9"
 mockall = "0.11"
+env_logger = "0.10"
 
 [features]
 default = []

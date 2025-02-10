@@ -18,8 +18,12 @@ pub mod error;
 pub mod handlers;
 pub mod server;
 
+/// Mock implementations for testing.
+pub mod mock;
+
+/// Test utilities and mock implementations.
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 // Re-export main types for convenience
 pub use error::{Error, Result};

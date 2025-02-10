@@ -467,6 +467,267 @@ The core crate provides a plugin system for customizing DIDComm functionality. I
 
 See the `TestPlugin` in the web server binary for a simple example implementation.
 
+### Using the Universal Resolver Plugin
+
+The `ssi` crate provides a universal resolver that supports many popular DID methods. Here's how to use it:
+
+```rust
+use ssi::did_resolve::{DIDResolver as SSIResolver, HTTPDIDResolver};
+use tap_didcomm_core::plugin::SSIDIDResolverWrapper;
+
+// Create a resolver that supports multiple DID methods
+async fn create_universal_resolver() -> impl DIDCommPlugin {
+    // Create a universal resolver with default configuration
+    let http_resolver = HTTPDIDResolver::new(
+        // Universal Resolver endpoint (or use your own)
+        "https://dev.uniresolver.io/1.0/identifiers/",
+        // Supported methods
+        vec![
+            "did:web",      // Web DIDs
+            "did:key",      // Key DIDs
+            "did:ethr",     // Ethereum DIDs
+            "did:ion",      // ION DIDs (Sidetree)
+            "did:sov",      // Sovrin DIDs
+            // Add more methods as needed
+        ],
+    );
+
+    // Wrap the universal resolver
+    SSIDIDResolverWrapper::new(http_resolver)
+}
+
+// Use it in your server
+#[actix_rt::main]
+async fn main() -> std::io::Result<()> {
+    // Create the universal resolver plugin
+    let resolver_plugin = create_universal_resolver().await;
+    
+    // Create a combined plugin that uses:
+    // - Universal resolver for DID resolution
+    // - Your custom implementation for signing/encryption
+    struct CombinedPlugin {
+        resolver: Box<dyn DIDResolver>,
+        signer: Box<dyn Signer>,
+        encryptor: Box<dyn Encryptor>,
+    }
+
+    impl DIDCommPlugin for CombinedPlugin {
+        fn as_resolver(&self) -> &dyn DIDResolver { &*self.resolver }
+        fn as_signer(&self) -> &dyn Signer { &*self.signer }
+        fn as_encryptor(&self) -> &dyn Encryptor { &*self.encryptor }
+    }
+
+    // Create your server with the combined plugin
+    let server = DIDCommServer::new(
+        server_config,
+        node_config,
+        CombinedPlugin {
+            resolver: Box::new(resolver_plugin),
+            signer: Box::new(YourSigner::new()),
+            encryptor: Box::new(YourEncryptor::new()),
+        },
+    );
+
+    server.run().await
+}
+```
+
+The universal resolver supports these DID methods out of the box:
+
+- `did:web` - Web DIDs
+- `did:key` - Key DIDs
+- `did:ethr` - Ethereum DIDs
+- `did:ion` - ION DIDs (Sidetree)
+- `did:sov` - Sovrin DIDs
+- `did:elem` - Element DIDs
+- `did:github` - GitHub DIDs
+- `did:peer` - Peer DIDs
+- And more...
+
+You can also configure it to use your own resolver endpoint or add support for additional DID methods.
+
+#### Custom Resolver Endpoint
+
+If you want to use a different resolver endpoint or run your own universal resolver:
+
+```rust
+let http_resolver = HTTPDIDResolver::new(
+    // Your custom endpoint
+    "https://your-resolver.example.com/resolve/",
+    // Your supported methods
+    vec!["did:web", "did:key", "your:custom:method"],
+);
+```
+
+#### Caching Support
+
+For better performance, you can add caching to the resolver:
+
+```rust
+use ssi::did_resolve::CachingDIDResolver;
+use std::time::Duration;
+
+let cached_resolver = CachingDIDResolver::new(
+    http_resolver,
+    Duration::from_secs(3600), // Cache for 1 hour
+);
+
+let plugin = SSIDIDResolverWrapper::new(cached_resolver);
+```
+
+### Example Server Configuration
+
+The project includes a default server implementation that uses environment variables for configuration and the universal resolver for DID resolution. You can use this as a starting point for your own implementation:
+
+#### Environment Variables
+
+- `PORT` - The HTTP port to listen on (default: 8080)
+- `SIGNING_JWK` - A JWK (JSON Web Key) for signing and encryption. Must be an Ed25519 key for signing and an ECDH key for encryption
+- `RUST_LOG` - Logging level (e.g., "debug", "info")
+
+#### Key Configuration
+
+The server uses JSON Web Key (JWK) format for cryptographic operations. For DIDComm v2 compatibility, you should use:
+
+1. For Signing/Verification (Ed25519):
+```json
+{
+  "kty": "OKP",
+  "crv": "Ed25519",
+  "x": "your-public-key-base64",
+  "d": "your-private-key-base64",
+  "use": "sig"
+}
+```
+
+2. For Encryption/Decryption (ECDH-ES):
+```json
+{
+  "kty": "EC",
+  "crv": "P-256",
+  "x": "your-public-key-x-base64",
+  "y": "your-public-key-y-base64",
+  "d": "your-private-key-base64",
+  "use": "enc"
+}
+```
+
+The server supports:
+- **Signing**: EdDSA with Ed25519 keys
+- **Encryption**: ECDH-ES+A256KW for key wrapping and A256GCM for content encryption
+- **Multiple Recipients**: Can encrypt messages for multiple DIDs
+- **Key Resolution**: Automatically resolves recipient keys from DID documents
+
+#### Running the Example Server
+
+1. First, generate your keys:
+```bash
+# Generate Ed25519 key for signing
+didkit generate-ed25519-key > signing.jwk
+
+# Generate ECDH key for encryption
+didkit generate-p256-key > encryption.jwk
+
+# Combine the keys (you'll need to manually merge the JWKs)
+cat signing.jwk encryption.jwk | jq -s add > combined.jwk
+
+# Set the environment variables
+export SIGNING_JWK=$(cat combined.jwk)
+export PORT=9000  # Optional, defaults to 8080
+export RUST_LOG=debug  # Optional
+```
+
+2. Run the server:
+```bash
+cargo run -p tap-didcomm-web --bin web_server
+```
+
+The server will start with:
+- Universal resolver support for major DID methods
+- CORS enabled for all origins
+- Credentials allowed
+- Base URL set to the server's address
+- Full JWE encryption and JWS signing support
+
+#### Testing Encrypted Messages
+
+1. Send an encrypted message:
+```bash
+curl -X POST http://localhost:8080/didcomm/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": {
+      "id": "1234567890",
+      "typ": "test",
+      "from": "did:example:alice",
+      "to": ["did:example:bob"],
+      "created_time": 1677721600,
+      "body": {"hello": "world"}
+    },
+    "packing": "AuthcryptV2",  // Use encryption
+    "endpoint": "http://localhost:8080/didcomm"
+  }'
+```
+
+The message will be:
+1. Signed using EdDSA (Ed25519)
+2. Encrypted using ECDH-ES key agreement
+3. Content encrypted with A256GCM
+4. Packaged as a JWE with all necessary headers
+
+When receiving messages, the server will:
+1. Decrypt the JWE using the node's private key
+2. Verify the signature using the sender's public key from their DID document
+3. Process the decrypted message
+
+#### Supported DID Methods
+
+The universal resolver supports the following DID methods through the `UniversalPlugin`:
+
+| Method | Specification | Verification | Encryption | Notes |
+|--------|--------------|--------------|------------|-------|
+| `did:web` | [DID Web Spec](https://w3c-ccg.github.io/did-method-web/) | ✅ | ✅ | Best for controlled domains. Supports both Ed25519 and ECDH keys. |
+| `did:key` | [DID Key Spec](https://w3c-ccg.github.io/did-method-key/) | ✅ | ✅ | Simple, portable. Good for testing. Supports multiple key types. |
+| `did:ethr` | [DID Ethr Spec](https://github.com/decentralized-identity/ethr-did-resolver/blob/master/doc/did-method-spec.md) | ✅ | ✅ | Ethereum-based. Uses secp256k1 keys. |
+| `did:ion` | [DID ION Spec](https://github.com/decentralized-identity/ion-did-method) | ✅ | ✅ | Bitcoin-anchored Sidetree. Good for long-term DIDs. |
+| `did:sov` | [DID Sov Spec](https://sovrin-foundation.github.io/sovrin/spec/did-method-spec-template.html) | ✅ | ✅ | Sovrin network. Uses Ed25519 keys. |
+| `did:elem` | [DID Element Spec](https://github.com/transmute-industries/sidetree.js/blob/main/docs/did-method-spec.md) | ✅ | ✅ | Sidetree-based. Multiple blockchain support. |
+| `did:peer` | [DID Peer Spec](https://identity.foundation/peer-did-method-spec/) | ✅ | ✅ | P2P interactions. No ledger required. |
+| `did:github` | [DID GitHub Spec](https://github.com/decentralized-identity/github-did/blob/master/docs/did-method-spec.md) | ✅ | ❌ | GitHub-based identity. Limited to verification. |
+| `did:pkh` | [DID PKH Spec](https://github.com/w3c-ccg/did-pkh/blob/main/did-pkh-method-spec.md) | ✅ | ❌ | For blockchain accounts. Verification only. |
+| `did:jwk` | [DID JWK Spec](https://github.com/quartzjer/did-jwk/blob/main/spec.md) | ✅ | ✅ | Direct JWK embedding. Good for testing. |
+| `did:tz` | [DID Tezos Spec](https://did-tezos.spruceid.com/) | ✅ | ✅ | Tezos blockchain-based. |
+| `did:sol` | [DID Solana Spec](https://github.com/identity-com/sol-did) | ✅ | ✅ | Solana blockchain-based. |
+| `did:indy` | [DID Indy Spec](https://hyperledger.github.io/indy-did-method/) | ✅ | ✅ | Hyperledger Indy networks. |
+| `did:keri` | [DID KERI Spec](https://identity.foundation/keri/did_methods/) | ✅ | ✅ | KERI protocol. Key event receipts. |
+
+Key capabilities:
+- **Verification**: Method supports key verification for signing/authentication
+- **Encryption**: Method supports key agreement for encryption
+- ✅ = Supported
+- ❌ = Not supported
+
+Recommendations:
+1. For **Web Services**:
+   - Primary: `did:web` - Easy to control and update
+   - Fallback: `did:key` - Simple and portable
+
+2. For **Enterprise**:
+   - Primary: `did:ion` - Robust and decentralized
+   - Alternatives: `did:indy`, `did:sov` - Good governance
+
+3. For **Blockchain Integration**:
+   - Primary: `did:ethr` - Widely supported
+   - Alternatives: `did:tz`, `did:sol` - Platform specific
+
+4. For **Testing**:
+   - Primary: `did:key` - Simple setup
+   - Alternative: `did:jwk` - Direct key control
+
+5. For **P2P Applications**:
+   - Primary: `did:peer` - Purpose-built for P2P
+   - Alternative: `did:key` - Simple but less flexible
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 

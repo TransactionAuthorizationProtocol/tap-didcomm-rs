@@ -1,60 +1,45 @@
 //! Error types for the tap-didcomm-web crate.
 
-use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use thiserror::Error;
 
-/// The main error type for tap-didcomm-web operations.
-#[derive(Error, Debug)]
+/// Error type for the web server.
+#[derive(Debug, Error)]
 pub enum Error {
-    /// An error from the core crate.
-    #[error("Core error: {0}")]
-    Core(#[from] tap_didcomm_core::error::Error),
-
-    /// An error from the node crate.
-    #[error("Node error: {0}")]
-    Node(#[from] tap_didcomm_node::error::Error),
-
-    /// An error occurred during serialization or deserialization.
+    /// An error occurred while serializing or deserializing data.
     #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
+    Serialization(String),
 
-    /// The server configuration is invalid.
-    #[error("Invalid configuration: {0}")]
-    InvalidConfig(String),
+    /// An error occurred while formatting data.
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 
-    /// The request is invalid.
-    #[error("Invalid request: {0}")]
-    InvalidRequest(String),
+    /// An error occurred while processing a message.
+    #[error("Message error: {0}")]
+    Message(String),
 
-    /// The requested resource was not found.
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    /// An internal server error occurred.
-    #[error("Internal server error: {0}")]
+    /// An internal error occurred.
+    #[error("Internal error: {0}")]
     Internal(String),
 }
 
 impl ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
-        let error = serde_json::json!({
-            "error": self.to_string()
-        });
-
-        HttpResponse::build(self.status_code()).json(error)
+        HttpResponse::build(self.status_code())
+            .json(serde_json::json!({
+                "error": self.to_string()
+            }))
     }
 
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::Core(_) | Self::Node(_) | Self::Serialization(_) | Self::Internal(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-            Self::InvalidConfig(_) => StatusCode::SERVICE_UNAVAILABLE,
-            Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Error::Serialization(_) => StatusCode::BAD_REQUEST,
+            Error::InvalidFormat(_) => StatusCode::BAD_REQUEST,
+            Error::Message(_) => StatusCode::BAD_REQUEST,
+            Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-/// A specialized Result type for tap-didcomm-web operations.
+/// Result type for the web server.
 pub type Result<T> = std::result::Result<T, Error>; 

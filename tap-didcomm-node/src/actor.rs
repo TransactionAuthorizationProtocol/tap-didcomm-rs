@@ -7,6 +7,25 @@ use tap_didcomm_core::Message as CoreMessage;
 #[derive(Debug, Clone)]
 pub struct Message(pub CoreMessage);
 
+impl Message {
+    /// Creates a new message.
+    pub fn new(typ: impl Into<String>, body: impl Into<serde_json::Value>) -> Result<Self, serde_json::Error> {
+        Ok(Self(CoreMessage::new(typ, body)?))
+    }
+
+    /// Sets the sender of the message.
+    pub fn from(mut self, from: impl Into<String>) -> Self {
+        self.0 = self.0.from(from);
+        self
+    }
+
+    /// Sets the recipients of the message.
+    pub fn to(mut self, to: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.0 = self.0.to(to);
+        self
+    }
+}
+
 impl From<CoreMessage> for Message {
     fn from(msg: CoreMessage) -> Self {
         Self(msg)
@@ -77,20 +96,16 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_logging_actor() {
-        let sys = actix_rt::System::new();
+        // Create a logging actor
+        let actor = LoggingActor::new("test").start();
 
-        sys.block_on(async {
-            // Create a logging actor
-            let actor = LoggingActor::new("test").start();
+        // Create a test message
+        let message = Message::new("test", json!({"hello": "world"}))
+            .unwrap()
+            .from("did:example:alice")
+            .to(vec!["did:example:bob"]);
 
-            // Create a test message
-            let message = Message::new("test", json!({"hello": "world"}))
-                .unwrap()
-                .from("did:example:alice")
-                .to(vec!["did:example:bob"]);
-
-            // Send the message to the actor
-            actor.send(message).await.unwrap();
-        });
+        // Send the message to the actor
+        actor.send(message).await.unwrap();
     }
 } 

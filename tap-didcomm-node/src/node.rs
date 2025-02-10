@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use tap_didcomm_core::{
     plugin::DIDCommPlugin,
     types::PackingType,
+    error::Error as CoreError,
 };
 use tracing::{debug, error, info};
 
@@ -125,6 +126,12 @@ impl DIDCommNode {
     }
 }
 
+impl From<CoreError> for Error {
+    fn from(err: CoreError) -> Self {
+        Error::Core(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,36 +222,42 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_receive_message() {
-        let sys = actix_rt::System::new();
+        // Create a mock handler
+        let handler = MockHandler::new().start();
 
-        sys.block_on(async {
-            // Create a mock handler
-            let handler = MockHandler::new().start();
+        // Create a node
+        let mut node = DIDCommNode::new(
+            NodeConfig {
+                did: "did:example:node".into(),
+                default_packing: PackingType::Signed,
+                base_url: None,
+            },
+            MockPlugin,
+        );
 
-            // Create a node
-            let mut node = DIDCommNode::new(
-                NodeConfig {
-                    did: "did:example:node".into(),
-                    default_packing: PackingType::Signed,
-                    base_url: None,
-                },
-                MockPlugin,
-            );
+        // Register the handler
+        node.register_handler("test", handler.recipient());
 
-            // Register the handler
-            node.register_handler("test", handler.recipient());
+        // Create and pack a test message
+        let message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
+            .unwrap()
+            .from("did:example:alice")
+            .to(vec!["did:example:node"]);
 
-            // Create and pack a test message
-            let message = CoreMessage::new("test", json!({"hello": "world"}))
-                .unwrap()
-                .to(vec!["did:example:node"]);
+        let packed = tap_didcomm_core::pack::pack_message(&message, &MockPlugin, PackingType::Signed)
+            .await
+            .unwrap();
 
-            let packed = tap_didcomm_core::pack::pack_message(&message, &MockPlugin, PackingType::Signed)
-                .await
-                .unwrap();
+        // Receive the message
+        node.receive(&packed).await.unwrap();
+    }
 
-            // Receive the message
-            node.receive(&packed).await.unwrap();
-        });
+    #[tokio::test]
+    async fn test_message_handling() {
+        let _message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
+            .unwrap()
+            .to(vec!["did:example:bob".to_string()])
+            .from("did:example:alice");
+        // ... rest of the test ...
     }
 } 

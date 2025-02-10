@@ -133,69 +133,25 @@ pub trait DIDCommPlugin: Send + Sync {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use mockall::mock;
-    use ssi::did_resolve::DIDResolver as SSIResolver;
-    use ssi::did::Document;
-    use ssi::did_resolve::ResolutionMetadata;
+    use ssi::did_resolve::{DocumentMetadata, ResolutionInputMetadata, ResolutionMetadata};
 
-    mock! {
-        Plugin {}
+    struct MockResolver;
 
-        #[async_trait]
-        impl DIDResolver for Plugin {
-            async fn resolve(&self, did: &str) -> Result<String>;
-        }
-
-        #[async_trait]
-        impl Signer for Plugin {
-            async fn sign(&self, message: &[u8], key_id: &str) -> Result<Vec<u8>>;
-            async fn verify(&self, message: &[u8], signature: &[u8], key_id: &str) -> Result<bool>;
-        }
-
-        #[async_trait]
-        impl Encryptor for Plugin {
-            async fn encrypt(&self, message: &[u8], recipients: Vec<String>, from: Option<String>) -> Result<Vec<u8>>;
-            async fn decrypt(&self, message: &[u8], recipient: String) -> Result<Vec<u8>>;
-        }
-    }
-
-    impl Clone for MockPlugin {
-        fn clone(&self) -> Self {
-            MockPlugin::new()
-        }
-    }
-
-    impl DIDCommPlugin for MockPlugin {
-        fn as_resolver(&self) -> &dyn DIDResolver {
-            self
-        }
-
-        fn as_signer(&self) -> &dyn Signer {
-            self
-        }
-
-        fn as_encryptor(&self) -> &dyn Encryptor {
-            self
+    #[async_trait::async_trait]
+    impl SSIResolver for MockResolver {
+        async fn resolve(
+            &self,
+            _did: &str,
+            _input_metadata: &ResolutionInputMetadata,
+        ) -> (ResolutionMetadata, Option<ssi::did::Document>, Option<DocumentMetadata>) {
+            let mut metadata = ResolutionMetadata::default();
+            metadata.error = Some("test error".to_string());
+            (metadata, None, None)
         }
     }
 
     #[tokio::test]
     async fn test_ssi_resolver_wrapper() {
-        struct MockResolver;
-
-        #[async_trait::async_trait]
-        impl SSIResolver for MockResolver {
-            async fn resolve(
-                &self,
-                _did: &str,
-                _input_metadata: &Default::default(),
-            ) -> (ResolutionMetadata, Option<Document>, Option<Default::default()>) {
-                let mut metadata = ResolutionMetadata::default();
-                metadata.error = Some("test error".to_string());
-                (metadata, None, None)
-            }
-        }
-
         let resolver = SSIDIDResolverWrapper::new(MockResolver);
         let result = resolver.resolve("did:example:123").await;
         assert!(result.is_err());

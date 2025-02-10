@@ -1,11 +1,5 @@
 [workspace]
-name = "tap-didcomm"
-version = "0.1.0"
-edition = "2021"
-authors = ["NotaBene <info@notabene.id>"]
-license = "MIT"
-description = "A modular DIDComm v2 library in Rust that can run both natively and in WASM environments"
-
+resolver = "2"
 members = [
     "tap-didcomm-core",
     "tap-didcomm-node",

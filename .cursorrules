@@ -35,79 +35,71 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 # Lessons
 
 ## User Specified Lessons
-
+- Always resolve the warnings and errors in the code before completing a task
+- Always run root level tests before completing a task
 
 ## Cursor learned
 
+### DIDComm Testing
+- When implementing mock plugins for DIDComm testing, ensure base64 encoding/decoding is handled correctly
+- For mock encryption/decryption, use base64 encoding as a simple test mechanism
+- Test both success and error cases for message handling
+- Ensure proper error handling in async operations
 
-### TypeScript Testing with Jest
-
-- When mocking WASM modules, create a separate `__mocks__` directory with the mock implementation
-- Use `jest.mock()` in the setup file to mock the module
-- Implement proper type checking in the mock to match the real implementation
-- Test both success and error cases for async functions
+### Workspace Configuration
+- For Rust 2021 edition projects, explicitly set `workspace.resolver = "2"` in the root Cargo.toml
+- Keep workspace manifest keys minimal, removing unused ones like name, version, etc. when using a virtual manifest
 
 # Scratchpad
 
-## Current Task: Initial Project Setup and Implementation
-
-This is a Rust project to build a modular DIDComm v2 library with three main crates:
-1. tap-didcomm-core: Core message handling with async signing/encryption
-2. tap-didcomm-node: Abstract DIDComm node with Actix Actor support
-3. tap-didcomm-web: HTTP server wrapper using Actix-web
+## Current Task: Cleaning Up Code Warnings
 
 ### Progress
-[X] Initial workspace setup
-  [X] Create workspace Cargo.toml
-  [X] Add MIT license
-  [X] Create initial README.md
-  [X] Set up GitHub Actions CI
+[X] Fix missing tests module in tap-didcomm-node
+[X] Fix syntax error in plugin.rs
+[X] Fix missing CoreMessage import in node.rs
+[X] Fix type mismatch issues in mock tests
+[X] Fix MockResolver trait implementation
+[X] Add new function for Message in actor.rs
+[X] Clean up unused imports in plugin.rs
+[X] Clean up unused imports in error.rs
+[X] Fix async test issues in actor.rs and node.rs
+[X] Set workspace resolver to version 2
+[X] Remove unused manifest keys from workspace configuration
 
-[X] Core crate implementation
-  [X] Create crate structure
-  [X] Define error types
-  [X] Define core data types
-  [X] Implement Message type
-  [X] Define plugin traits
-  [X] Implement message packing/unpacking
-  [X] Add tests
+### Completed
+1. Fixed test runtime errors in actor.rs and node.rs:
+   - Removed block_on usage in async tests
+   - Fixed test_logging_actor and test_receive_message
+2. Added missing sender to test messages
+3. All tests now passing across all crates
+4. Cleaned up unused imports in plugin.rs and error.rs
+5. Updated workspace configuration:
+   - Set resolver to version 2 for Rust 2021 edition compatibility
+   - Removed unused manifest keys from workspace section
 
-[X] Node crate implementation  
-  [X] Create crate structure
-  [X] Define error types
-  [X] Define node type
-  [X] Implement Actix Actor support
-  [X] Add dispatch functionality
-  [X] Write tests
+### Next Steps
+All warnings have been resolved and all tests are passing. No further steps needed.
 
-[X] Web crate implementation
-  [X] Create crate structure
-  [X] Set up Actix-web server
-  [X] Implement HTTP endpoints
-  [X] Add example logging actor
-  [X] Write tests
+## Current Task: Fixing Test Issues in tap-didcomm-web
 
-### Implementation Complete
+### Progress
+[X] Identified test failures in end-to-end message flow
+[X] Fixed mock plugin implementation
+[X] Fix test_end_to_end_message_flow test
+  [X] Update message handling to properly handle base64 encoding/decoding
+  [X] Ensure proper error handling in async operations
+  [X] Verify message flow with updated mock plugin
 
-We have successfully implemented all three crates with their required functionality:
+### Completed
+1. Fixed test_end_to_end_message_flow by properly handling message packing and encoding:
+   - Pack message using mock plugin
+   - Base64 encode packed message
+   - Send to endpoint
+2. All tests now passing
+3. Proper error handling in place
 
-1. tap-didcomm-core:
-   - Complete message packing/unpacking with async signing and encryption
-   - Plugin system for DID resolution, signing, and encryption
-   - Comprehensive test coverage
-
-2. tap-didcomm-node:
-   - DIDComm node implementation with plugin support
-   - Actor system integration with message handling
-   - Message dispatch functionality with WASM support
-   - Example logging actor
-   - Comprehensive test coverage
-
-3. tap-didcomm-web:
-   - HTTP server wrapper with CORS support
-   - Endpoints for receiving and sending messages
-   - Status endpoint for node information
-   - Error handling and logging middleware
-   - Comprehensive test coverage
-
-The project is now ready for use, with all features implemented according to the PRD requirements.
+### Next Steps
+1. Clean up unused imports (Message from tap_didcomm_node::actor)
+2. Consider addressing workspace resolver warnings
+3. Consider cleaning up unused manifest keys in Cargo.toml

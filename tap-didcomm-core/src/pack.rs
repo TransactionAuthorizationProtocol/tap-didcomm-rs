@@ -83,18 +83,20 @@ mod tests {
 
         let message_bytes = serde_json::to_vec(&message).unwrap();
         let signature = vec![1, 2, 3, 4];
+        let signature_for_sign = signature.clone();
+        let signature_for_verify = signature.clone();
 
         plugin_clone
             .expect_sign()
             .with(eq(message_bytes.clone()), eq("did:example:alice"))
             .times(1)
-            .returning(|_, _| Ok(signature.clone()));
+            .returning(move |_, _| Ok(signature_for_sign.clone()));
 
         plugin_clone
             .expect_verify()
-            .with(eq(message_bytes), eq(&signature), eq("did:example:alice"))
+            .with(eq(message_bytes.clone()), eq(signature_for_verify.clone()), eq("did:example:alice"))
             .times(1)
-            .returning(|_, _, _| Ok(true));
+            .returning(move |_, _, _| Ok(true));
 
         plugin
             .expect_as_signer()
@@ -102,7 +104,7 @@ mod tests {
             .return_const(Box::new(plugin_clone) as Box<dyn crate::plugin::Signer>);
 
         let packed = pack_message(&message, &plugin, PackingType::Signed).await.unwrap();
-        assert_eq!(packed, STANDARD.encode(&signature));
+        assert_eq!(packed, base64::engine::general_purpose::STANDARD.encode(&signature));
     }
 
     #[tokio::test]
@@ -116,22 +118,25 @@ mod tests {
 
         let message_bytes = serde_json::to_vec(&message).unwrap();
         let encrypted = vec![5, 6, 7, 8];
+        let encrypted_for_encrypt = encrypted.clone();
+        let encrypted_for_decrypt = encrypted.clone();
+        let message_bytes_for_decrypt = message_bytes.clone();
 
         plugin_clone
             .expect_encrypt()
             .with(
                 eq(message_bytes.clone()),
                 eq(vec!["did:example:bob".to_string()]),
-                eq(Some("did:example:alice".to_string()))
+                eq(Some("did:example:alice".to_string())),
             )
             .times(1)
-            .returning(|_, _, _| Ok(encrypted.clone()));
+            .returning(move |_, _, _| Ok(encrypted_for_encrypt.clone()));
 
         plugin_clone
             .expect_decrypt()
-            .with(eq(&encrypted), eq("did:example:bob"))
+            .with(eq(encrypted_for_decrypt.clone()), eq("did:example:bob".to_string()))
             .times(1)
-            .returning(|_, _| Ok(message_bytes.clone()));
+            .returning(move |_, _| Ok(message_bytes_for_decrypt.clone()));
 
         plugin
             .expect_as_encryptor()

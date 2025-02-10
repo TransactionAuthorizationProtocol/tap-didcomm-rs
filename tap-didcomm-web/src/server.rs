@@ -4,6 +4,9 @@ use actix_cors::Cors;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use tap_didcomm_core::plugin::DIDCommPlugin;
 use tap_didcomm_node::{DIDCommNode, NodeConfig};
+use actix::Recipient;
+use tap_didcomm_node::actor::Message;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     error::Result,
@@ -35,7 +38,7 @@ pub struct DIDCommServer {
     /// The server configuration.
     config: ServerConfig,
     /// The DIDComm node.
-    node: DIDCommNode,
+    node: Arc<Mutex<DIDCommNode>>,
 }
 
 impl DIDCommServer {
@@ -53,7 +56,19 @@ impl DIDCommServer {
     ) -> Self {
         Self {
             config,
-            node: DIDCommNode::new(node_config, plugin),
+            node: Arc::new(Mutex::new(DIDCommNode::new(node_config, plugin))),
+        }
+    }
+
+    /// Gets a reference to the underlying node.
+    pub fn get_node(&self) -> Arc<Mutex<DIDCommNode>> {
+        self.node.clone()
+    }
+
+    /// Register a message handler with the node.
+    pub fn register_handler(&self, message_type: &str, handler: Recipient<Message>) {
+        if let Ok(mut node) = self.node.lock() {
+            node.register_handler(message_type, handler);
         }
     }
 
@@ -103,67 +118,9 @@ impl DIDCommServer {
 mod tests {
     use super::*;
     use actix_web::test;
-    use serde_json::json;
-    use tap_didcomm_core::Message as CoreMessage;
-
-    // Mock plugin (same as in node tests)
-    struct MockPlugin;
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::DIDResolver for MockPlugin {
-        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<String> {
-            Ok("{}".to_string())
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Signer for MockPlugin {
-        async fn sign(
-            &self,
-            message: &[u8],
-            _from: &str,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn verify(&self, _message: &[u8], _signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
-            Ok(true)
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Encryptor for MockPlugin {
-        async fn encrypt(
-            &self,
-            message: &[u8],
-            _to: Vec<String>,
-            _from: Option<String>,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn decrypt(
-            &self,
-            message: &[u8],
-            _recipient: String,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-    }
-
-    impl tap_didcomm_core::plugin::DIDCommPlugin for MockPlugin {
-        fn as_resolver(&self) -> &dyn tap_didcomm_core::plugin::DIDResolver {
-            self
-        }
-
-        fn as_signer(&self) -> &dyn tap_didcomm_core::plugin::Signer {
-            self
-        }
-
-        fn as_encryptor(&self) -> &dyn tap_didcomm_core::plugin::Encryptor {
-            self
-        }
-    }
+    use crate::tests::MockPlugin;
+    use actix::Actor;
+    use tap_didcomm_node::actor::LoggingActor;
 
     #[actix_rt::test]
     async fn test_server() {
@@ -177,14 +134,21 @@ mod tests {
         };
 
         let node_config = NodeConfig::default();
-        let plugin = MockPlugin;
+        let plugin = MockPlugin::new();
 
         let server = DIDCommServer::new(config, node_config, plugin);
-        let node = web::Data::new(server.node);
+        let node = server.get_node();
+        let node_data = web::Data::new(node);
+
+        // Create and register a logging actor
+        let logging_actor = LoggingActor::new("test-logger").start();
+        if let Ok(mut node) = node_data.lock() {
+            node.register_handler("*", logging_actor.recipient());
+        }
 
         let app = test::init_service(
             App::new()
-                .app_data(node.clone())
+                .app_data(node_data)
                 .service(receive_message)
                 .service(send_message)
                 .service(status),
@@ -192,7 +156,7 @@ mod tests {
         .await;
 
         // Test status endpoint
-        let req = test::TestRequest::get().uri("/status").to_request();
+        let req = test::TestRequest::post().uri("/status").to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
     }
