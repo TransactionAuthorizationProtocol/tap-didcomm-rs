@@ -22,7 +22,7 @@ pub mod node;
 mod tests;
 
 // Re-export main types for convenience
-pub use actor::{DIDCommActor, MessageHandler};
-pub use dispatch::{dispatch_message, DispatchOptions};
+pub use actor::MessageHandler;
+pub use dispatch::dispatch_message;
 pub use error::{Error, Result};
 pub use node::{DIDCommNode, NodeConfig}; 

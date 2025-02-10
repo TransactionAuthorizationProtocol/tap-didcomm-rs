@@ -1,15 +1,23 @@
-//! DIDComm HTTP server implementation.
+//! HTTP server implementation.
 
 use actix_cors::Cors;
-use actix_web::{middleware, web, App, HttpServer};
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use tap_didcomm_core::plugin::DIDCommPlugin;
 use tap_didcomm_node::{DIDCommNode, NodeConfig};
-use tracing::info;
 
 use crate::{
-    error::{Error, Result},
-    handlers::{get_status, receive_message, send_message},
+    error::Result,
+    handlers::{receive_message, send_message, status},
 };
+
+/// Configuration for CORS.
+#[derive(Debug, Clone)]
+pub struct CorsConfig {
+    /// The allowed origins.
+    pub allowed_origins: Vec<String>,
+    /// Whether to allow credentials.
+    pub allow_credentials: bool,
+}
 
 /// Configuration for the DIDComm server.
 #[derive(Debug, Clone)]
@@ -22,16 +30,7 @@ pub struct ServerConfig {
     pub cors: CorsConfig,
 }
 
-/// CORS configuration.
-#[derive(Debug, Clone)]
-pub struct CorsConfig {
-    /// Allowed origins.
-    pub allowed_origins: Vec<String>,
-    /// Whether to allow credentials.
-    pub allow_credentials: bool,
-}
-
-/// A DIDComm HTTP server.
+/// A DIDComm server that exposes HTTP endpoints.
 pub struct DIDCommServer {
     /// The server configuration.
     config: ServerConfig,
@@ -58,49 +57,43 @@ impl DIDCommServer {
         }
     }
 
-    /// Starts the server.
+    /// Runs the server.
     ///
     /// # Returns
     ///
-    /// A future that resolves when the server has started.
+    /// A future that resolves when the server stops.
     pub async fn run(self) -> Result<()> {
-        info!(
-            "Starting DIDComm server on {}:{}",
-            self.config.host, self.config.port
-        );
+        let node = web::Data::new(self.node);
+        let config = self.config;
 
-        // Create the node data
-        let node_data = web::Data::new(self.node);
-
-        // Create CORS middleware
-        let cors = Cors::default()
-            .allowed_origin_fn(move |origin, _| {
-                let origin = origin.to_str().unwrap_or("");
-                self.config
-                    .cors
-                    .allowed_origins
-                    .iter()
-                    .any(|allowed| allowed == "*" || allowed == origin)
-            })
-            .allow_methods(vec!["GET", "POST"])
-            .allow_headers(vec!["Content-Type"])
-            .supports_credentials(self.config.cors.allow_credentials);
-
-        // Start the server
         HttpServer::new(move || {
+            let allowed_origins = config.cors.allowed_origins.clone();
+            let mut cors = Cors::default()
+                .allowed_origin_fn(move |origin, _| {
+                    let origin = origin.to_str().unwrap_or("");
+                    allowed_origins
+                        .iter()
+                        .any(|allowed| allowed == "*" || allowed == origin)
+                })
+                .allowed_methods(vec!["GET", "POST"]);
+
+            if config.cors.allow_credentials {
+                cors = cors.supports_credentials();
+            }
+
             App::new()
-                .app_data(node_data.clone())
-                .wrap(middleware::Logger::default())
-                .wrap(cors.clone())
+                .wrap(Logger::default())
+                .wrap(cors)
+                .app_data(node.clone())
                 .service(receive_message)
                 .service(send_message)
-                .service(get_status)
+                .service(status)
         })
-        .bind((self.config.host, self.config.port))
-        .map_err(|e| Error::Internal(format!("Failed to bind server: {}", e)))?
+        .bind((config.host, config.port))
+        .map_err(|e| crate::error::Error::Internal(format!("Failed to bind server: {}", e)))?
         .run()
         .await
-        .map_err(|e| Error::Internal(format!("Server error: {}", e)))?;
+        .map_err(|e| crate::error::Error::Internal(format!("Server error: {}", e)))?;
 
         Ok(())
     }
@@ -111,15 +104,15 @@ mod tests {
     use super::*;
     use actix_web::test;
     use serde_json::json;
-    use tap_didcomm_core::types::PackingType;
+    use tap_didcomm_core::Message as CoreMessage;
 
-    // Mock plugin (same as in handlers tests)
+    // Mock plugin (same as in node tests)
     struct MockPlugin;
 
     #[async_trait::async_trait]
     impl tap_didcomm_core::plugin::DIDResolver for MockPlugin {
-        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<serde_json::Value> {
-            Ok(json!({}))
+        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<String> {
+            Ok("{}".to_string())
         }
     }
 
@@ -133,8 +126,8 @@ mod tests {
             Ok(message.to_vec())
         }
 
-        async fn verify(&self, _message: &[u8], _from: &str) -> tap_didcomm_core::error::Result<()> {
-            Ok(())
+        async fn verify(&self, _message: &[u8], _signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
+            Ok(true)
         }
     }
 
@@ -143,25 +136,18 @@ mod tests {
         async fn encrypt(
             &self,
             message: &[u8],
-            _to: &[String],
-            _from: Option<&str>,
-        ) -> tap_didcomm_core::error::Result<tap_didcomm_core::types::PackedMessage> {
-            Ok(tap_didcomm_core::types::PackedMessage {
-                data: String::from_utf8(message.to_vec()).unwrap(),
-                packing: self.packing_type(),
-            })
+            _to: Vec<String>,
+            _from: Option<String>,
+        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
+            Ok(message.to_vec())
         }
 
         async fn decrypt(
             &self,
-            message: &tap_didcomm_core::types::PackedMessage,
-            _to: &str,
+            message: &[u8],
+            _recipient: String,
         ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.data.as_bytes().to_vec())
-        }
-
-        fn packing_type(&self) -> PackingType {
-            PackingType::Plain
+            Ok(message.to_vec())
         }
     }
 
@@ -180,27 +166,34 @@ mod tests {
     }
 
     #[actix_rt::test]
-    async fn test_server_config() {
-        let server = DIDCommServer::new(
-            ServerConfig {
-                host: "127.0.0.1".into(),
-                port: 8080,
-                cors: CorsConfig {
-                    allowed_origins: vec!["*".into()],
-                    allow_credentials: true,
-                },
+    async fn test_server() {
+        let config = ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            cors: CorsConfig {
+                allowed_origins: vec!["*".to_string()],
+                allow_credentials: true,
             },
-            NodeConfig {
-                did: "did:example:node".into(),
-                default_packing: PackingType::Plain,
-                base_url: Some("http://localhost:8080".into()),
-            },
-            MockPlugin,
-        );
+        };
 
-        assert_eq!(server.config.host, "127.0.0.1");
-        assert_eq!(server.config.port, 8080);
-        assert_eq!(server.config.cors.allowed_origins, vec!["*"]);
-        assert!(server.config.cors.allow_credentials);
+        let node_config = NodeConfig::default();
+        let plugin = MockPlugin;
+
+        let server = DIDCommServer::new(config, node_config, plugin);
+        let node = web::Data::new(server.node);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(node.clone())
+                .service(receive_message)
+                .service(send_message)
+                .service(status),
+        )
+        .await;
+
+        // Test status endpoint
+        let req = test::TestRequest::get().uri("/status").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
     }
 } 

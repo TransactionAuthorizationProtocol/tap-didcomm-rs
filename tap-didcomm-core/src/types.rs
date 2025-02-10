@@ -52,10 +52,10 @@ pub struct Message {
 
 impl Message {
     /// Create a new message
-    pub fn new(typ: String) -> Self {
-        Self {
+    pub fn new(typ: impl Into<String>, body: impl Into<serde_json::Value>) -> Result<Self, serde_json::Error> {
+        Ok(Self {
             id: MessageId::random(),
-            typ: MessageType::new(typ),
+            typ: MessageType(typ.into()),
             from: None,
             to: None,
             created_time: std::time::SystemTime::now()
@@ -63,9 +63,21 @@ impl Message {
                 .unwrap()
                 .as_secs(),
             expires_time: None,
-            body: serde_json::Value::Null,
+            body: body.into(),
             attachments: None,
-        }
+        })
+    }
+
+    /// Set the sender of the message
+    pub fn from(mut self, from: impl Into<String>) -> Self {
+        self.from = Some(from.into());
+        self
+    }
+
+    /// Set the recipients of the message
+    pub fn to(mut self, to: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.to = Some(to.into_iter().map(Into::into).collect());
+        self
     }
 }
 

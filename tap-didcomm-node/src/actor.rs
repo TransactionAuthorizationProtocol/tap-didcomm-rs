@@ -1,7 +1,21 @@
 //! Actor system integration for DIDComm message handling.
 
 use actix::prelude::*;
-use tap_didcomm_core::Message;
+use tap_didcomm_core::Message as CoreMessage;
+
+/// A wrapper type for DIDComm messages that can be handled by actors.
+#[derive(Debug, Clone)]
+pub struct Message(pub CoreMessage);
+
+impl From<CoreMessage> for Message {
+    fn from(msg: CoreMessage) -> Self {
+        Self(msg)
+    }
+}
+
+impl actix::Message for Message {
+    type Result = ();
+}
 
 /// A trait for actors that can handle DIDComm messages.
 pub trait MessageHandler: Actor {
@@ -12,11 +26,6 @@ pub trait MessageHandler: Actor {
     /// * `message` - The message to handle
     /// * `ctx` - The actor context
     fn handle_message(&mut self, message: Message, ctx: &mut Self::Context);
-}
-
-/// Message type for DIDComm messages.
-impl Message for tap_didcomm_core::Message {
-    type Result = ();
 }
 
 /// A simple logging actor that logs all received messages.
@@ -48,8 +57,8 @@ impl Handler<Message> for LoggingActor {
     fn handle(&mut self, msg: Message, _ctx: &mut Self::Context) {
         tracing::info!(
             actor = self.name,
-            message_type = msg.header.typ.0,
-            message_id = msg.header.id.0,
+            message_type = msg.0.typ.0,
+            message_id = msg.0.id.0,
             "Received message"
         );
     }
@@ -75,7 +84,7 @@ mod tests {
             let actor = LoggingActor::new("test").start();
 
             // Create a test message
-            let message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
+            let message = Message::new("test", json!({"hello": "world"}))
                 .unwrap()
                 .from("did:example:alice")
                 .to(vec!["did:example:bob"]);

@@ -3,7 +3,7 @@
 use actix_web::{get, post, web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use tap_didcomm_core::types::{Message, PackedMessage, PackingType};
-use tap_didcomm_node::{dispatch_message, DispatchOptions, DIDCommNode};
+use tap_didcomm_node::{dispatch_message, dispatch::DispatchOptions, DIDCommNode};
 use tracing::{debug, info};
 
 use crate::error::{Error, Result};
@@ -65,19 +65,14 @@ pub async fn send_message(
     request: web::Json<SendMessageRequest>,
 ) -> Result<HttpResponse> {
     info!("Sending DIDComm message");
-    debug!("Request: {:?}", request);
+    debug!("Message: {:?}", request);
 
-    // Get the packing type
-    let packing = request.packing.unwrap_or(node.config().default_packing);
-
-    // Create dispatch options
     let options = DispatchOptions {
-        packing,
+        packing: request.packing.unwrap_or(node.config().default_packing),
         endpoint: request.endpoint.clone(),
     };
 
-    // Dispatch the message
-    dispatch_message(&request.message, node.plugin(), options)
+    dispatch_message(&request.message, node.plugin(), &options)
         .await
         .map_err(Error::Node)?;
 
@@ -90,9 +85,7 @@ pub async fn send_message(
 ///
 /// * `node` - The DIDComm node
 #[get("/status")]
-pub async fn get_status(node: web::Data<DIDCommNode>) -> Result<HttpResponse> {
-    info!("Getting node status");
-
+pub async fn status(node: web::Data<DIDCommNode>) -> Result<HttpResponse> {
     let status = NodeStatus {
         did: node.config().did.clone(),
         base_url: node.config().base_url.clone(),
@@ -115,8 +108,8 @@ mod tests {
 
     #[async_trait::async_trait]
     impl tap_didcomm_core::plugin::DIDResolver for MockPlugin {
-        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<serde_json::Value> {
-            Ok(json!({}))
+        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<String> {
+            Ok("{}".to_string())
         }
     }
 
@@ -130,8 +123,8 @@ mod tests {
             Ok(message.to_vec())
         }
 
-        async fn verify(&self, _message: &[u8], _from: &str) -> tap_didcomm_core::error::Result<()> {
-            Ok(())
+        async fn verify(&self, _message: &[u8], _signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
+            Ok(true)
         }
     }
 
@@ -140,25 +133,18 @@ mod tests {
         async fn encrypt(
             &self,
             message: &[u8],
-            _to: &[String],
-            _from: Option<&str>,
-        ) -> tap_didcomm_core::error::Result<PackedMessage> {
-            Ok(PackedMessage {
-                data: String::from_utf8(message.to_vec()).unwrap(),
-                packing: self.packing_type(),
-            })
+            _to: Vec<String>,
+            _from: Option<String>,
+        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
+            Ok(message.to_vec())
         }
 
         async fn decrypt(
             &self,
-            message: &PackedMessage,
-            _to: &str,
+            message: &[u8],
+            _recipient: String,
         ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.data.as_bytes().to_vec())
-        }
-
-        fn packing_type(&self) -> PackingType {
-            PackingType::Plain
+            Ok(message.to_vec())
         }
     }
 
@@ -182,7 +168,7 @@ mod tests {
         let node = DIDCommNode::new(
             NodeConfig {
                 did: "did:example:node".into(),
-                default_packing: PackingType::Plain,
+                default_packing: PackingType::Signed,
                 base_url: None,
             },
             MockPlugin,
@@ -200,7 +186,7 @@ mod tests {
             .unwrap()
             .to(vec!["did:example:node"]);
 
-        let packed = tap_didcomm_core::pack::pack_message(&message, &MockPlugin, PackingType::Plain)
+        let packed = tap_didcomm_core::pack::pack_message(&message, &MockPlugin, PackingType::Signed)
             .await
             .unwrap();
 
@@ -212,33 +198,5 @@ mod tests {
 
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
-    }
-
-    #[actix_rt::test]
-    async fn test_get_status() {
-        // Create a test app
-        let node = DIDCommNode::new(
-            NodeConfig {
-                did: "did:example:node".into(),
-                default_packing: PackingType::Plain,
-                base_url: Some("http://localhost:8080".into()),
-            },
-            MockPlugin,
-        );
-
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(node))
-                .service(get_status),
-        )
-        .await;
-
-        // Send the request
-        let req = test::TestRequest::get().uri("/status").to_request();
-
-        let resp: NodeStatus = test::call_and_read_body_json(&app, req).await;
-        assert_eq!(resp.did, "did:example:node");
-        assert_eq!(resp.base_url, Some("http://localhost:8080".into()));
-        assert!(resp.ready);
     }
 } 

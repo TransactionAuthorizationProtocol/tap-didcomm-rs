@@ -25,7 +25,7 @@ pub(crate) mod tests;
 
 // Re-export main types for convenience
 pub use error::Error;
-pub use message::Message;
+pub use types::Message;
 pub use pack::{pack_message, unpack_message};
 pub use plugin::{DIDResolver, Encryptor, Signer};
 pub use types::*; 

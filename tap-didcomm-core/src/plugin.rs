@@ -1,14 +1,8 @@
 //! Plugin traits for customizing DIDComm functionality.
 
 use async_trait::async_trait;
-use ssi::did_resolve::{
-    DIDResolver as SSIResolver,
-    ResolutionInputMetadata,
-    ResolutionMetadata,
-    DocumentMetadata,
-};
+use ssi::did_resolve::DIDResolver as SSIResolver;
 use crate::error::{Error, Result};
-use ssi::did::Document;
 
 /// A trait for resolving DIDs.
 #[async_trait]
@@ -124,15 +118,14 @@ where
 /// A trait for implementing a complete DIDComm plugin.
 ///
 /// This trait combines DID resolution, signing, and encryption capabilities.
-#[async_trait]
-pub trait DIDCommPlugin: DIDResolver + Signer + Encryptor + Send + Sync + Clone {
-    /// Gets a reference to the DID resolver.
+pub trait DIDCommPlugin: Send + Sync {
+    /// Returns a reference to the DID resolver implementation.
     fn as_resolver(&self) -> &dyn DIDResolver;
 
-    /// Gets a reference to the signer.
+    /// Returns a reference to the signer implementation.
     fn as_signer(&self) -> &dyn Signer;
 
-    /// Gets a reference to the encryptor.
+    /// Returns a reference to the encryptor implementation.
     fn as_encryptor(&self) -> &dyn Encryptor;
 }
 
@@ -195,8 +188,8 @@ pub mod tests {
             async fn resolve(
                 &self,
                 _did: &str,
-                _input_metadata: &ResolutionInputMetadata,
-            ) -> (ResolutionMetadata, Option<Document>, Option<DocumentMetadata>) {
+                _input_metadata: &Default::default(),
+            ) -> (ResolutionMetadata, Option<Document>, Option<Default::default()>) {
                 let mut metadata = ResolutionMetadata::default();
                 metadata.error = Some("test error".to_string());
                 (metadata, None, None)
