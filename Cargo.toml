@@ -1,0 +1,31 @@
+[workspace]
+name = "tap-didcomm"
+version = "0.1.0"
+edition = "2021"
+authors = ["NotaBene <info@notabene.id>"]
+license = "MIT"
+description = "A modular DIDComm v2 library in Rust that can run both natively and in WASM environments"
+
+members = [
+    "tap-didcomm-core",
+    "tap-didcomm-node",
+    "tap-didcomm-web",
+]
+
+[workspace.dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+thiserror = "1.0"
+
+# SSI dependencies
+ssi = "0.7"  # For DIDComm v2, encryption, and DID resolution
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Testing
+anyhow = "1.0" 

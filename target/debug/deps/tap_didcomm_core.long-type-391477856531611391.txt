@@ -1,0 +1,1 @@
+(ResolutionMetadata, std::option::Option<Document>, std::option::Option<DocumentMetadata>)

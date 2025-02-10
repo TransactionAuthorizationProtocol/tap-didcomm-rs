@@ -1,0 +1,11 @@
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/liblibipld_cbor-d40489581ca42c62.rmeta: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/cbor.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/decode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/encode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/error.rs
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/liblibipld_cbor-d40489581ca42c62.rlib: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/cbor.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/decode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/encode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/error.rs
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/libipld_cbor-d40489581ca42c62.d: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/cbor.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/decode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/encode.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/error.rs
+
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/lib.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/cbor.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/decode.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/encode.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libipld-cbor-0.14.0/src/error.rs:

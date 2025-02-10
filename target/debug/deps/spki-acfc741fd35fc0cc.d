@@ -1,0 +1,12 @@
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/libspki-acfc741fd35fc0cc.rmeta: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/algorithm.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/error.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/spki.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/traits.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/../README.md
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/libspki-acfc741fd35fc0cc.rlib: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/algorithm.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/error.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/spki.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/traits.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/../README.md
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/spki-acfc741fd35fc0cc.d: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/algorithm.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/error.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/spki.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/traits.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/../README.md
+
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/lib.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/algorithm.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/error.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/spki.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/traits.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/spki-0.6.0/src/../README.md:

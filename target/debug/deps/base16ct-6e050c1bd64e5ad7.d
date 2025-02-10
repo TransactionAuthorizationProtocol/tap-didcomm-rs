@@ -1,0 +1,12 @@
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/libbase16ct-6e050c1bd64e5ad7.rmeta: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lower.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/mixed.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/upper.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/display.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/error.rs
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/libbase16ct-6e050c1bd64e5ad7.rlib: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lower.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/mixed.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/upper.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/display.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/error.rs
+
+/Users/pelle/code/notabene/tap-didcomm/target/debug/deps/base16ct-6e050c1bd64e5ad7.d: /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lib.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lower.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/mixed.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/upper.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/display.rs /Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/error.rs
+
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lib.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/lower.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/mixed.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/upper.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/display.rs:
+/Users/pelle/.cargo/registry/src/index.crates.io-6f17d22bba15001f/base16ct-0.1.1/src/error.rs:
