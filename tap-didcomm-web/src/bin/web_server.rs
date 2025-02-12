@@ -40,78 +40,37 @@ impl UniversalPlugin {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(not(feature = "wasm"), async_trait)]
+#[cfg_attr(feature = "wasm", async_trait(?Send))]
 impl DIDResolver for UniversalPlugin {
     async fn resolve(&self, did: &str) -> tap_didcomm_core::error::Result<String> {
         self.resolver.resolve(did).await
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Signer for UniversalPlugin {
-    async fn sign(
-        &self,
-        message: &[u8],
-        from: &str,
-    ) -> tap_didcomm_core::error::Result<Vec<u8>> {
+    async fn sign(&self, message: &[u8], _from: &str) -> tap_didcomm_core::error::Result<Vec<u8>> {
         let header = Header {
             algorithm: Algorithm::EdDSA,
-            key_id: Some(from.to_string()),
             ..Default::default()
         };
-
-        let message_str = std::str::from_utf8(message)
-            .map_err(|e| tap_didcomm_core::error::Error::InvalidFormat(e.to_string()))?;
-        
-        let jws = encode_sign_custom_header(
-            message_str,
-            &self.signing_key,
-            &header,
-        ).map_err(|e| tap_didcomm_core::error::Error::Signing(e.to_string()))?;
-
-        Ok(jws.into_bytes())
+        let signature = encode_sign_custom_header(message, &header, &self.signing_key)
+            .map_err(|e| tap_didcomm_core::error::Error::Signing(e.to_string()))?;
+        Ok(signature.as_bytes().to_vec())
     }
 
-    async fn verify(
-        &self,
-        message: &[u8],
-        signature: &[u8],
-        from: &str,
-    ) -> tap_didcomm_core::error::Result<bool> {
-        // Verify JWS using the public key from DID document
-        let doc = self.resolve(from).await?;
-        let doc: Value = serde_json::from_str(&doc)
-            .map_err(|e| tap_didcomm_core::error::Error::InvalidFormat(e.to_string()))?;
-        
-        let key = doc["verificationMethod"]
-            .as_array()
-            .and_then(|methods| {
-                methods.iter().find(|m| m["type"] == "JsonWebKey2020")
-            })
-            .and_then(|m| Some(m["publicKeyJwk"].clone()))
-            .ok_or_else(|| tap_didcomm_core::error::Error::InvalidFormat("No verification key found".into()))?;
-
-        let key: JWK = serde_json::from_value(key)
-            .map_err(|e| tap_didcomm_core::error::Error::InvalidFormat(e.to_string()))?;
-        
-        let sig_str = std::str::from_utf8(signature)
-            .map_err(|e| tap_didcomm_core::error::Error::InvalidFormat(e.to_string()))?;
-
-        let (_, verified_message) = decode_verify(sig_str, &key)
+    async fn verify(&self, message: &[u8], signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
+        let sig_str = String::from_utf8_lossy(signature);
+        let (_, verified) = decode_verify(&sig_str, &self.signing_key)
             .map_err(|e| tap_didcomm_core::error::Error::Verification(e.to_string()))?;
-
-        Ok(verified_message == message)
+        Ok(verified == message)
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Encryptor for UniversalPlugin {
-    async fn encrypt(
-        &self,
-        message: &[u8],
-        _to: Vec<String>,
-        from: Option<String>,
-    ) -> tap_didcomm_core::error::Result<Vec<u8>> {
+    async fn encrypt(&self, message: &[u8], _to: Vec<String>, from: Option<String>) -> tap_didcomm_core::error::Result<Vec<u8>> {
         // For now, we'll just sign the message since we don't have proper encryption
         if let Some(from) = from {
             self.sign(message, &from).await
@@ -120,11 +79,7 @@ impl Encryptor for UniversalPlugin {
         }
     }
 
-    async fn decrypt(
-        &self,
-        message: &[u8],
-        _recipient: String,
-    ) -> tap_didcomm_core::error::Result<Vec<u8>> {
+    async fn decrypt(&self, message: &[u8], _recipient: String) -> tap_didcomm_core::error::Result<Vec<u8>> {
         // For now, we'll just verify the signature since we don't have proper decryption
         let message_str = std::str::from_utf8(message)
             .map_err(|e| tap_didcomm_core::error::Error::InvalidFormat(e.to_string()))?;

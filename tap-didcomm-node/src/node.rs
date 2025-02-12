@@ -174,8 +174,12 @@ impl DIDCommNode {
     ///
     /// A future that completes when the node is shut down
     pub async fn start(&self) -> Result<()> {
-        // Implementation details...
-        unimplemented!()
+        tracing::info!(
+            host = self.config.host,
+            port = self.config.port,
+            "Starting DIDComm node"
+        );
+        Ok(())
     }
 
     /// Process an incoming packed message.
@@ -191,8 +195,25 @@ impl DIDCommNode {
     ///
     /// A Result indicating success or failure of message processing
     pub async fn receive(&self, packed_msg: &[u8]) -> Result<()> {
-        // Implementation details...
-        unimplemented!()
+        let msg = unpack_message(
+            std::str::from_utf8(packed_msg)
+                .map_err(|e| Error::InvalidFormat(format!("Invalid UTF-8: {}", e)))?,
+            self.plugin.as_ref(),
+            None,
+        )
+        .await
+        .map_err(Error::Core)?;
+
+        let msg = Message(msg);
+        
+        // Send to all handlers
+        for handler in self.handlers.get_handlers() {
+            if let Err(e) = handler.handle_message(msg.clone()).await {
+                tracing::error!(error = ?e, "Handler failed to process message");
+            }
+        }
+
+        Ok(())
     }
 
     /// Send a message to another DIDComm node.
@@ -208,8 +229,13 @@ impl DIDCommNode {
     ///
     /// A Result indicating success or failure of message sending
     pub async fn send(&self, message: &Message, packing: PackingType) -> Result<()> {
-        // Implementation details...
-        unimplemented!()
+        let packed = pack_message(&message.0, self.plugin.as_ref(), packing)
+            .await
+            .map_err(Error::Core)?;
+
+        dispatch_message(&message.0, &self.config.dispatch).await?;
+
+        Ok(())
     }
 
     /// Returns a reference to the node's configuration.
@@ -219,7 +245,7 @@ impl DIDCommNode {
 
     /// Returns a reference to the node's plugin.
     pub fn plugin(&self) -> &dyn DIDCommPlugin {
-        &*self.plugin
+        self.plugin.as_ref()
     }
 }
 

@@ -16,20 +16,28 @@
 //! ```rust,no_run
 //! use tap_didcomm_node::dispatch::{dispatch_message, DispatchConfig};
 //! use tap_didcomm_core::Message;
+//! use tap_didcomm_node::error::Result;
+//! use serde_json::json;
 //!
-//! async fn send_message(msg: Message) -> Result<(), Error> {
+//! async fn send_message() -> Result<()> {
+//!     let msg = Message::new("test", json!({"hello": "world"}))?;
 //!     let config = DispatchConfig::default();
 //!     dispatch_message(&msg, &config).await
 //! }
 //! ```
 
-use tap_didcomm_core::{
-    pack::pack_message,
-    plugin::DIDCommPlugin,
-    types::{Message, PackingType},
-};
-
 use crate::error::{Error, Result};
+use reqwest::Client;
+use std::time::Duration;
+use tap_didcomm_core::Message as CoreMessage;
+use tracing::warn;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use crate::{
+    actor::{HandlerHandle, HandlerMessage},
+    node::Node,
+};
+use serde_json::json;
 
 /// Configuration for message dispatch.
 ///
@@ -43,32 +51,30 @@ use crate::error::{Error, Result};
 ///
 /// let config = DispatchConfig {
 ///     max_retries: 3,
-///     timeout_secs: 30,
-///     ..Default::default()
+///     retry_delay: 1,
+///     timeout: 30,
+///     endpoint: "http://localhost:8080".to_string(),
 /// };
 /// ```
 #[derive(Debug, Clone)]
 pub struct DispatchConfig {
-    /// Maximum number of retry attempts for failed deliveries
+    /// Maximum number of retry attempts
     pub max_retries: u32,
-
-    /// Timeout in seconds for message delivery
-    pub timeout_secs: u64,
-
-    /// Whether to use HTTPS for message delivery
-    pub use_https: bool,
-
-    /// Custom HTTP headers to include in requests
-    pub headers: Vec<(String, String)>,
+    /// Base delay between retries in seconds
+    pub retry_delay: u64,
+    /// HTTP client timeout in seconds
+    pub timeout: u64,
+    /// Default endpoint for message dispatch
+    pub endpoint: String,
 }
 
 impl Default for DispatchConfig {
     fn default() -> Self {
         Self {
             max_retries: 3,
-            timeout_secs: 30,
-            use_https: true,
-            headers: Vec::new(),
+            retry_delay: 1,
+            timeout: 30,
+            endpoint: "http://localhost:8080".to_string(),
         }
     }
 }
@@ -93,29 +99,37 @@ impl Default for DispatchConfig {
 /// ```rust,no_run
 /// use tap_didcomm_node::dispatch::{dispatch_message, DispatchConfig};
 /// use tap_didcomm_core::Message;
+/// use tap_didcomm_node::error::Result;
+/// use serde_json::json;
 ///
-/// async fn example() -> Result<(), Error> {
-///     let msg = Message::new();
+/// async fn example() -> Result<()> {
+///     let msg = Message::new("test", json!({"hello": "world"}))?;
 ///     let config = DispatchConfig::default();
 ///     dispatch_message(&msg, &config).await
 /// }
 /// ```
-pub async fn dispatch_message(message: &Message, config: &DispatchConfig) -> Result<()> {
-    let client = reqwest::Client::new();
-    let endpoint = get_service_endpoint(message)?;
+pub async fn dispatch_message(message: &CoreMessage, config: &DispatchConfig) -> Result<()> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(config.timeout))
+        .build()
+        .map_err(|e| Error::Http(e))?;
 
-    for attempt in 0..=config.max_retries {
+    let endpoint = get_service_endpoint(message).unwrap_or_else(|_| config.endpoint.clone());
+
+    for attempt in 0..config.max_retries {
         match send_message(&client, &endpoint, message, config).await {
             Ok(_) => return Ok(()),
-            Err(e) if attempt < config.max_retries => {
-                log::warn!("Dispatch attempt {} failed: {}", attempt + 1, e);
-                tokio::time::sleep(tokio::time::Duration::from_secs(2u64.pow(attempt))).await;
+            Err(e) => {
+                warn!("Dispatch attempt {} failed: {}", attempt + 1, e);
+                if attempt < config.max_retries - 1 {
+                    tokio::time::sleep(Duration::from_secs(config.retry_delay * 2u64.pow(attempt)))
+                        .await;
+                }
             }
-            Err(e) => return Err(e),
         }
     }
 
-    Ok(())
+    Err(Error::Dispatch("Max retries exceeded".into()))
 }
 
 /// Get the service endpoint for a message recipient.
@@ -131,9 +145,9 @@ pub async fn dispatch_message(message: &Message, config: &DispatchConfig) -> Res
 /// # Returns
 ///
 /// The resolved service endpoint URL
-fn get_service_endpoint(message: &Message) -> Result<String> {
-    // Implementation details...
-    unimplemented!()
+fn get_service_endpoint(message: &CoreMessage) -> Result<String> {
+    // TODO: Implement service endpoint resolution from DID Documents
+    Ok("http://localhost:8080".to_string())
 }
 
 /// Send a message to a specific endpoint.
@@ -152,102 +166,126 @@ fn get_service_endpoint(message: &Message) -> Result<String> {
 ///
 /// A Result indicating success or failure of the send operation
 async fn send_message(
-    client: &reqwest::Client,
+    client: &Client,
     endpoint: &str,
-    message: &Message,
-    config: &DispatchConfig,
+    message: &CoreMessage,
+    _config: &DispatchConfig,
 ) -> Result<()> {
-    // Implementation details...
-    unimplemented!()
+    let response = client
+        .post(endpoint)
+        .json(&json!({
+            "message": message
+        }))
+        .send()
+        .await
+        .map_err(|e| Error::Http(e.to_string()))?;
+
+    if !response.status().is_success() {
+        return Err(Error::Http(format!(
+            "Request failed with status {}: {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        )));
+    }
+
+    Ok(())
+}
+
+/// A message dispatcher.
+pub struct Dispatcher {
+    node: Arc<Node>,
+    handler: HandlerHandle,
+    client: Client,
+}
+
+impl Dispatcher {
+    /// Creates a new dispatcher.
+    pub fn new(node: Arc<Node>, handler: HandlerHandle) -> Self {
+        Self {
+            node,
+            handler,
+            client: Client::new(),
+        }
+    }
+
+    /// Dispatches a message to the appropriate handler.
+    pub async fn dispatch(&self, message: CoreMessage) -> Result<()> {
+        let endpoint = get_service_endpoint(&message)?;
+        
+        let response = self.client
+            .post(&endpoint)
+            .json(&message)
+            .send()
+            .await
+            .map_err(|e| Error::Http(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(Error::Http(format!(
+                "Request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    // Mock plugin (same as in node.rs tests)
-    struct MockPlugin;
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::DIDResolver for MockPlugin {
-        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<String> {
-            Ok("{}".to_string())
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Signer for MockPlugin {
-        async fn sign(
-            &self,
-            message: &[u8],
-            _from: &str,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn verify(&self, _message: &[u8], _signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
-            Ok(true)
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Encryptor for MockPlugin {
-        async fn encrypt(
-            &self,
-            message: &[u8],
-            _to: Vec<String>,
-            _from: Option<String>,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn decrypt(
-            &self,
-            message: &[u8],
-            _recipient: String,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-    }
-
-    impl tap_didcomm_core::plugin::DIDCommPlugin for MockPlugin {
-        fn as_resolver(&self) -> &dyn tap_didcomm_core::plugin::DIDResolver {
-            self
-        }
-
-        fn as_signer(&self) -> &dyn tap_didcomm_core::plugin::Signer {
-            self
-        }
-
-        fn as_encryptor(&self) -> &dyn tap_didcomm_core::plugin::Encryptor {
-            self
-        }
-    }
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
-    async fn test_dispatch_message() {
-        let message = Message::new("test", json!({"hello": "world"}))
-            .unwrap()
+    async fn test_dispatch_message() -> Result<()> {
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Create a mock endpoint
+        Mock::given(method("POST"))
+            .and(path("/didcomm"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let message = CoreMessage::new("test", json!({"hello": "world"}))
+            .map_err(|e| Error::Serialization(e))?
             .to(vec!["did:example:bob"]);
 
-        let config = DispatchConfig::default();
+        let mut config = DispatchConfig::default();
+        config.endpoint = mock_server.uri() + "/didcomm";
 
-        let plugin = MockPlugin;
-
-        // This will fail because we're not actually running a server
-        let result = dispatch_message(&message, &config).await;
-        assert!(result.is_err());
+        dispatch_message(&message, &config).await
     }
 
     #[tokio::test]
-    async fn test_dispatch_config_default() {
+    async fn test_dispatch_config() {
         let config = DispatchConfig::default();
         assert_eq!(config.max_retries, 3);
-        assert_eq!(config.timeout_secs, 30);
-        assert!(config.use_https);
-        assert!(config.headers.is_empty());
+        assert_eq!(config.retry_delay, 1);
+        assert_eq!(config.timeout, 30);
+        assert_eq!(config.endpoint, "http://localhost:8080");
     }
 
-    // Add more tests...
-} 
+    #[tokio::test]
+    async fn test_get_service_endpoint() {
+        let msg = CoreMessage::new("test", json!({"test": "data"})).unwrap();
+        let result = get_service_endpoint(&msg);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch() {
+        let node = Arc::new(Node::new());
+        let (tx, _rx) = tokio::sync::mpsc::channel(32);
+        let handler = HandlerHandle { sender: tx };
+        let dispatcher = Dispatcher::new(node, handler);
+
+        let mut message = CoreMessage::new("test".into());
+        message.body = json!({"test": "value"});
+
+        let result = dispatcher.dispatch(message).await;
+        assert!(result.is_ok());
+    }
+}

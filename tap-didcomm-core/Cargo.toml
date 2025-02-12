@@ -3,21 +3,26 @@ name = "tap-didcomm-core"
 version = "0.1.0"
 edition = "2021"
 authors = ["Pelle Braendgaard <pelle@notabene.id>"]
-license = "MIT"
-description = "Core DIDComm v2 message handling with async signing, encryption, and verification"
+license = "Apache-2.0"
+description = "Core DIDComm implementation for TAP"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Workspace dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
+futures = "0.3"
 
 # SSI dependencies
 ssi = { workspace = true }
+ssi-dids = "0.1"
 
 # Cryptographic dependencies
 aes = "0.8"
@@ -27,33 +32,38 @@ chacha20poly1305 = "0.10"
 hmac = "0.12"
 sha2 = "0.10"
 hkdf = "0.12"
-rand_core = { version = "0.6", features = ["std"] }
+rand_core = { version = "0.6", features = ["std", "getrandom"] }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 p256 = { version = "0.13", features = ["ecdh"] }
 p384 = { version = "0.13", features = ["ecdh"] }
 p521 = { version = "0.13", features = ["ecdh"] }
 zeroize = "1.6"
 
-# WASM support (optional)
-wasm-bindgen = { version = "0.2", optional = true }
-wasm-bindgen-futures = { version = "0.4", optional = true }
-js-sys = { version = "0.3", optional = true }
-web-sys = { version = "0.3", features = ["console"], optional = true }
+# WASM dependencies
+wasm-bindgen = { version = "0.2.100", optional = true }
+wasm-bindgen-futures = { version = "0.4.40", optional = true }
+js-sys = { version = "0.3.67", optional = true }
+serde-wasm-bindgen = { version = "0.6.5", optional = true }
+getrandom = { version = "0.2.12", features = ["js"], optional = true }
 
 # Base64 encoding/decoding
-base64 = "0.21"
+base64 = { workspace = true }
 
 # UUID generation
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.0", features = ["v4", "js"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
 pretty_assertions = "1.0"
 mockall = "0.11"
+wasm-bindgen-test = "0.3.40"
 
 [features]
-default = []
-wasm = ["wasm-bindgen", "wasm-bindgen-futures", "js-sys", "web-sys"]
-
-[lib]
-crate-type = ["cdylib", "rlib"] 
+default = ["tokio"]
+wasm = [
+    "wasm-bindgen",
+    "wasm-bindgen-futures",
+    "js-sys",
+    "serde-wasm-bindgen",
+    "getrandom"
+] 

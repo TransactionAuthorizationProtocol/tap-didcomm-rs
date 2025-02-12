@@ -1,12 +1,7 @@
-//! Core DIDComm v2 message handling with async signing, encryption, and verification.
+//! Core `DIDComm` v2 implementation.
 //!
-//! This crate provides the core functionality for DIDComm v2 message processing, including:
-//! - Message packing and unpacking
-//! - Async signing and verification
-//! - Encryption and decryption
-//! - Pluggable DID resolvers, signers, and encryptors
-//!
-//! It is designed to work both natively and in WebAssembly environments.
+//! This crate provides the core functionality for `DIDComm` v2 message handling,
+//! including message packing and unpacking, plugin system, and error handling.
 
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
@@ -14,18 +9,15 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-pub mod error;
-pub mod message;
-pub mod pack;
-pub mod plugin;
-pub mod types;
+mod error;
+mod pack;
+mod plugin;
+mod tests;
+mod types;
 
-#[cfg(test)]
-pub(crate) mod tests;
-
-// Re-export main types for convenience
-pub use error::Error;
-pub use types::Message;
+pub use error::{Error, Result};
 pub use pack::{pack_message, unpack_message};
-pub use plugin::{DIDResolver, Encryptor, Signer};
-pub use types::*; 
+pub use plugin::{DIDCommPlugin, DIDResolver, Encryptor, Signer};
+pub use types::{
+    Attachment, AttachmentData, Header, Message, MessageId, MessageType, PackedMessage, PackingType,
+};

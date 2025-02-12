@@ -2,24 +2,27 @@
 resolver = "2"
 members = [
     "tap-didcomm-core",
-    "tap-didcomm-node",
-    "tap-didcomm-web",
+    "tap-didcomm-node"
 ]
 
 [workspace.dependencies]
 # Core dependencies
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
-async-trait = "0.1"
-thiserror = "1.0"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+base64 = "0.22.0"
+thiserror = "1.0.57"
+async-trait = "0.1.77"
 
 # SSI dependencies
-ssi = "0.7"  # For DIDComm v2, encryption, and DID resolution
+ssi = { version = "0.7.0", default-features = false }
+tokio = { version = "1.36.0", features = ["sync", "macros"] }
 
 # Logging
-tracing = "0.1"
+tracing = "0.1.40"
 tracing-subscriber = "0.3"
 
 # Testing
-anyhow = "1.0" 
+anyhow = "1.0.80"
+
+[workspace.metadata]
+resolver = "2" 

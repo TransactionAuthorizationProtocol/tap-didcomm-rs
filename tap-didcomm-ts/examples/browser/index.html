@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DIDComm Browser Example</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .container {
+      display: grid;
+      grid-gap: 20px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      background: #f9f9f9;
+    }
+    .output {
+      background: #2d2d2d;
+      color: #fff;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      margin-top: 10px;
+    }
+    button {
+      background: #0066cc;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #0052a3;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>DIDComm Browser Example</h2>
+      <p>This example demonstrates using the DIDComm library in a browser environment.</p>
+      <button id="runDemo" onclick="runDemo()">Run Demo</button>
+      <div id="output" class="output">Click "Run Demo" to start...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { DIDCommClient, DefaultDIDCommPlugin, PackingType } from '../../dist/index.mjs';
+
+    // Make runDemo available globally
+    window.runDemo = async function() {
+      const outputDiv = document.getElementById('output');
+      const button = document.getElementById('runDemo');
+      
+      // Helper to log output
+      function log(message) {
+        outputDiv.textContent += '\n' + message;
+        outputDiv.scrollTop = outputDiv.scrollHeight;
+      }
+
+      try {
+        button.disabled = true;
+        outputDiv.textContent = 'Initializing DIDComm client...';
+
+        // Initialize client
+        const client = new DIDCommClient({
+          defaultPacking: PackingType.ANONCRYPT,
+          useHttps: true
+        }, new DefaultDIDCommPlugin());
+
+        // Initialize WASM
+        const initResult = await client.initialize();
+        if (!initResult.success) {
+          throw new Error(`Failed to initialize: ${initResult.error?.message}`);
+        }
+        log('✓ DIDComm client initialized');
+
+        // Create test message
+        const message = {
+          id: `test-${Date.now()}`,
+          type: 'example/1.0',
+          body: {
+            text: 'Hello from the browser!',
+            timestamp: Date.now()
+          }
+        };
+        log('\nTest message created:');
+        log(JSON.stringify(message, null, 2));
+
+        // Example DIDs
+        const senderDid = 'did:example:sender';
+        const recipientDid = 'did:example:recipient';
+
+        // Encrypt message
+        log('\nEncrypting message...');
+        const encryptResult = await client.encrypt(message, {
+          to: [recipientDid],
+          from: senderDid,
+          packing: PackingType.AUTHCRYPT
+        });
+
+        if (!encryptResult.success || !encryptResult.data) {
+          throw new Error(`Encryption failed: ${encryptResult.error?.message}`);
+        }
+        log('✓ Message encrypted successfully');
+
+        // Decrypt message
+        log('\nDecrypting message...');
+        const decryptResult = await client.decrypt(encryptResult.data, {
+          recipient: recipientDid,
+          verifySignature: true
+        });
+
+        if (!decryptResult.success || !decryptResult.data) {
+          throw new Error(`Decryption failed: ${decryptResult.error?.message}`);
+        }
+        log('✓ Message decrypted successfully');
+        log('\nDecrypted message:');
+        log(JSON.stringify(decryptResult.data, null, 2));
+
+        log('\nDemo completed successfully!');
+      } catch (error) {
+        log(`\n❌ Error: ${error.message}`);
+        console.error(error);
+      } finally {
+        button.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html> 

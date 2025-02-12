@@ -26,18 +26,92 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use tap_didcomm_node::{DIDCommNode, NodeConfig, MessageHandler};
-//! use tap_didcomm_core::Message;
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::{DIDCommNode, NodeConfig};
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::{error::Result, actor::Message, actor::HandlerHandle};
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::actor::spawn_message_handler;
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_core::{Message as CoreMessage, types::PackingType};
+//! #[cfg(feature = "wasm")]
+//! use serde_json::json;
+//! #[cfg(feature = "wasm")]
+//! use async_trait::async_trait;
 //!
-//! // Create a node with default configuration
-//! let config = NodeConfig::default();
-//! let mut node = DIDCommNode::new(config, your_plugin);
+//! #[cfg(feature = "wasm")]
+//! #[derive(Clone)]
+//! struct TestPlugin;
 //!
-//! // Register a message handler
-//! node.register_handler("test", your_handler.recipient());
+//! #[cfg(feature = "wasm")]
+//! #[async_trait(?Send)]
+//! impl tap_didcomm_core::plugin::DIDResolver for TestPlugin {
+//!     async fn resolve(&self, _: &str) -> tap_didcomm_core::error::Result<String> {
+//!         Ok("{}".into())
+//!     }
+//! }
 //!
-//! // Receive and process a message
-//! node.receive(&packed_message).await?;
+//! #[cfg(feature = "wasm")]
+//! #[async_trait]
+//! impl tap_didcomm_core::plugin::Signer for TestPlugin {
+//!     async fn sign(&self, msg: &[u8], _: &str) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//!
+//!     async fn verify(&self, _: &[u8], _: &[u8], _: &str) -> tap_didcomm_core::error::Result<bool> {
+//!         Ok(true)
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! #[async_trait]
+//! impl tap_didcomm_core::plugin::Encryptor for TestPlugin {
+//!     async fn encrypt(&self, msg: &[u8], _: Vec<String>, _: Option<String>) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//!
+//!     async fn decrypt(&self, msg: &[u8], _: String) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! unsafe impl Send for TestPlugin {}
+//! #[cfg(feature = "wasm")]
+//! unsafe impl Sync for TestPlugin {}
+//!
+//! #[cfg(feature = "wasm")]
+//! impl tap_didcomm_core::plugin::DIDCommPlugin for TestPlugin {
+//!     fn as_resolver(&self) -> &dyn tap_didcomm_core::plugin::DIDResolver {
+//!         self
+//!     }
+//!
+//!     fn as_signer(&self) -> &dyn tap_didcomm_core::plugin::Signer {
+//!         self
+//!     }
+//!
+//!     fn as_encryptor(&self) -> &dyn tap_didcomm_core::plugin::Encryptor {
+//!         self
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! async fn example() -> Result<()> {
+//!     let config = NodeConfig::default();
+//!     let plugin = TestPlugin;
+//!     let mut node = DIDCommNode::new(config, plugin);
+//!
+//!     // Create a handler for test messages
+//!     let handler = spawn_message_handler();
+//!     node.register_handler(handler);
+//!
+//!     // Create and send a message
+//!     let core_message = CoreMessage::new("test", json!({"hello": "world"}))?;
+//!     let message = Message(core_message);
+//!     node.send(&message, PackingType::AuthcryptV2).await?;
+//!
+//!     Ok(())
+//! }
 //! ```
 //!
 //! # WASM Support
@@ -51,16 +125,117 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+//! Node.js bindings for TAP DIDComm implementation.
+//!
+//! This crate provides Node.js bindings for the TAP DIDComm implementation,
+//! allowing Node.js applications to use DIDComm messaging functionality.
+//!
+//! # Features
+//!
+//! - DIDComm message handling
+//! - Message routing and dispatch
+//! - Plugin system for DID resolution and crypto operations
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::{DIDCommNode, NodeConfig};
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::{error::Result, actor::Message, actor::HandlerHandle};
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_node::actor::spawn_message_handler;
+//! #[cfg(feature = "wasm")]
+//! use tap_didcomm_core::{Message as CoreMessage, types::PackingType};
+//! #[cfg(feature = "wasm")]
+//! use serde_json::json;
+//! #[cfg(feature = "wasm")]
+//! use async_trait::async_trait;
+//!
+//! #[cfg(feature = "wasm")]
+//! #[derive(Clone)]
+//! struct TestPlugin;
+//!
+//! #[cfg(feature = "wasm")]
+//! #[async_trait(?Send)]
+//! impl tap_didcomm_core::plugin::DIDResolver for TestPlugin {
+//!     async fn resolve(&self, _: &str) -> tap_didcomm_core::error::Result<String> {
+//!         Ok("{}".into())
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! #[async_trait]
+//! impl tap_didcomm_core::plugin::Signer for TestPlugin {
+//!     async fn sign(&self, msg: &[u8], _: &str) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//!
+//!     async fn verify(&self, _: &[u8], _: &[u8], _: &str) -> tap_didcomm_core::error::Result<bool> {
+//!         Ok(true)
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! #[async_trait]
+//! impl tap_didcomm_core::plugin::Encryptor for TestPlugin {
+//!     async fn encrypt(&self, msg: &[u8], _: Vec<String>, _: Option<String>) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//!
+//!     async fn decrypt(&self, msg: &[u8], _: String) -> tap_didcomm_core::error::Result<Vec<u8>> {
+//!         Ok(msg.to_vec())
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! unsafe impl Send for TestPlugin {}
+//! #[cfg(feature = "wasm")]
+//! unsafe impl Sync for TestPlugin {}
+//!
+//! #[cfg(feature = "wasm")]
+//! impl tap_didcomm_core::plugin::DIDCommPlugin for TestPlugin {
+//!     fn as_resolver(&self) -> &dyn tap_didcomm_core::plugin::DIDResolver {
+//!         self
+//!     }
+//!
+//!     fn as_signer(&self) -> &dyn tap_didcomm_core::plugin::Signer {
+//!         self
+//!     }
+//!
+//!     fn as_encryptor(&self) -> &dyn tap_didcomm_core::plugin::Encryptor {
+//!         self
+//!     }
+//! }
+//!
+//! #[cfg(feature = "wasm")]
+//! async fn example() -> Result<()> {
+//!     let config = NodeConfig::default();
+//!     let plugin = TestPlugin;
+//!     let mut node = DIDCommNode::new(config, plugin);
+//!
+//!     // Create a handler for test messages
+//!     let handler = spawn_message_handler();
+//!     node.register_handler(handler);
+//!
+//!     // Create and send a message
+//!     let core_message = CoreMessage::new("test", json!({"hello": "world"}))?;
+//!     let message = Message(core_message);
+//!     node.send(&message, PackingType::AuthcryptV2).await?;
+//!
+//!     Ok(())
+//! }
+
 pub mod actor;
 pub mod dispatch;
 pub mod error;
 pub mod node;
+pub mod mock;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export main types for convenience
-pub use actor::MessageHandler;
-pub use dispatch::dispatch_message;
+pub use actor::{HandlerHandle, Message};
 pub use error::{Error, Result};
-pub use node::{DIDCommNode, NodeConfig}; 
+pub use node::{Node, NodeConfig};

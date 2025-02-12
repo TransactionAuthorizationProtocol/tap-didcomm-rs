@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DIDComm Browser Tests</title>
+</head>
+<body>
+  <div id="test-results"></div>
+  <script type="module">
+    import { DIDCommClient, DefaultDIDCommPlugin } from '../../../src/index';
+    
+    // Expose test functions globally
+    window.runDIDCommTests = async () => {
+      const results = [];
+      try {
+        // Initialize client
+        const client = new DIDCommClient({
+          plugin: new DefaultDIDCommPlugin()
+        });
+        results.push({ name: 'init', success: true });
+
+        // Test message encryption
+        const message = {
+          id: 'test-msg-1',
+          type: 'test-type',
+          body: { test: 'data' }
+        };
+        
+        const encrypted = await client.packEncrypted({
+          message,
+          recipientDids: ['did:example:123'],
+          senderDid: 'did:example:456'
+        });
+        results.push({ name: 'encrypt', success: true, data: encrypted });
+
+        // Test message decryption
+        const decrypted = await client.unpackEncrypted(encrypted);
+        results.push({ name: 'decrypt', success: true, data: decrypted });
+
+      } catch (error) {
+        results.push({
+          name: 'error',
+          success: false,
+          error: error.message
+        });
+      }
+
+      // Display results
+      document.getElementById('test-results').textContent = 
+        JSON.stringify(results, null, 2);
+      
+      return results;
+    };
+  </script>
+</body>
+</html> 

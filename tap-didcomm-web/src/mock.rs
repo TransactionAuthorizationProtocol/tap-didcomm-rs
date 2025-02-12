@@ -18,7 +18,8 @@ impl MockPlugin {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(feature = "wasm"), async_trait)]
+#[cfg_attr(feature = "wasm", async_trait(?Send))]
 impl DIDResolver for MockPlugin {
     async fn resolve(&self, _did: &str) -> Result<String> {
         Ok(json!({
@@ -68,7 +69,7 @@ impl Encryptor for MockPlugin {
         _to: Vec<String>,
         _from: Option<String>,
     ) -> Result<Vec<u8>> {
-        // For testing, we'll just base64 encode the message as our "encryption"
+        // For testing, we'll just base64 encode the message
         Ok(STANDARD.encode(message).into_bytes())
     }
 
@@ -77,10 +78,9 @@ impl Encryptor for MockPlugin {
         message: &[u8],
         _recipient: String,
     ) -> Result<Vec<u8>> {
-        // Decrypt by base64 decoding
-        let message_str = String::from_utf8_lossy(message);
-        Ok(STANDARD.decode(message_str.as_bytes())
-            .map_err(|e| tap_didcomm_core::error::Error::Decryption(e.to_string()))?)
+        // For testing, we'll just base64 decode the message
+        STANDARD.decode(message)
+            .map_err(|e| tap_didcomm_core::error::Error::Decryption(e.to_string()))
     }
 }
 
@@ -102,7 +102,7 @@ impl DIDCommPlugin for MockPlugin {
 mod tests {
     use super::*;
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_mock_plugin() {
         let plugin = MockPlugin::new();
         
@@ -110,20 +110,15 @@ mod tests {
         let did_doc = plugin.resolve("did:example:test").await.unwrap();
         assert!(did_doc.contains("did:example:test"));
         
-        // Test signing and verification
+        // Test signing
         let message = b"test message";
         let signature = plugin.sign(message, "did:example:test").await.unwrap();
         let verified = plugin.verify(message, &signature, "did:example:test").await.unwrap();
         assert!(verified);
         
-        // Test encryption and decryption
-        let encrypted = plugin.encrypt(
-            message,
-            vec!["did:example:recipient".to_string()],
-            Some("did:example:sender".to_string())
-        ).await.unwrap();
-        
+        // Test encryption
+        let encrypted = plugin.encrypt(message, vec!["did:example:recipient".to_string()], None).await.unwrap();
         let decrypted = plugin.decrypt(&encrypted, "did:example:recipient".to_string()).await.unwrap();
-        assert_eq!(decrypted, message);
+        assert_eq!(message, decrypted.as_slice());
     }
 } 

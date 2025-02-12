@@ -8,13 +8,15 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
 
 jobs:
-  test:
-    name: Test
+  rust-checks:
+    name: Rust Checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -22,14 +24,8 @@ jobs:
           components: rustfmt, clippy
       
       - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
+        uses: Swatinem/rust-cache@v2
+
       - name: Check formatting
         run: cargo fmt --all -- --check
       
@@ -37,13 +33,66 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       
       - name: Run tests
-        run: cargo test --workspace --all-features
+        run: cargo test --all-features --workspace
 
-  wasm:
-    name: WebAssembly
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
+
+  typescript-checks:
+    name: TypeScript Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./tap-didcomm-ts
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9.15.4
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build WASM
+        run: pnpm run build:wasm
+
+      - name: Type check
+        run: pnpm run type-check
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Run tests
+        run: pnpm run test
+
+      - name: Run browser tests
+        run: pnpm run test:browser
+
+  wasm-integration:
+    name: WASM Integration Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -53,9 +102,19 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       
-      - name: Build WASM
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9.15.4
+
+      - name: Build and test WASM
         run: |
           cd tap-didcomm-core
-          wasm-pack build --target web
-          cd ../tap-didcomm-node
-          wasm-pack build --target web 
+          wasm-pack test --node
+          wasm-pack test --chrome --headless
+          wasm-pack test --firefox --headless 

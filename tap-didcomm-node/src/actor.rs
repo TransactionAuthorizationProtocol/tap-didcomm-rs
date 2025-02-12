@@ -1,211 +1,156 @@
-//! Actor system integration for DIDComm message handling.
-//!
-//! This module provides the integration between the DIDComm node and the Actix actor system.
-//! It allows messages to be handled asynchronously by actors, enabling flexible and
-//! scalable message processing pipelines.
-//!
-//! # Architecture
-//!
-//! The actor system is built around two main components:
-//! - `MessageHandler`: A trait that defines how actors handle DIDComm messages
-//! - `HandlerRegistry`: A registry that maps message types to their handlers
-//!
-//! # Examples
-//!
-//! ```rust,no_run
-//! use actix::prelude::*;
-//! use tap_didcomm_node::actor::MessageHandler;
-//! use tap_didcomm_core::Message;
-//!
-//! struct MyHandler;
-//!
-//! impl Actor for MyHandler {
-//!     type Context = Context<Self>;
-//! }
-//!
-//! impl MessageHandler for MyHandler {
-//!     fn handle(&self, msg: Message) -> Result<(), Error> {
-//!         // Process the message
-//!         Ok(())
-//!     }
-//! }
-//! ```
+//! Lightweight actor system for DIDComm message handling.
+//! 
+//! This module provides a simple actor-based message handling system using Tokio channels.
+//! It is designed to work in both native and WASM environments by using a single-threaded
+//! runtime model.
 
-use std::collections::HashMap;
 use std::sync::Arc;
-
-use actix::prelude::*;
+use tokio::sync::{mpsc, oneshot};
 use tap_didcomm_core::Message as CoreMessage;
+use tracing::{debug, error};
+use serde_json::Value;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    node::Node,
+};
 
-/// A wrapper type for DIDComm messages that can be handled by actors.
-#[derive(Debug, Clone)]
+/// A DIDComm message wrapper
+#[derive(Debug)]
 pub struct Message(pub CoreMessage);
 
 impl Message {
-    /// Creates a new message.
-    pub fn new(typ: impl Into<String>, body: impl Into<serde_json::Value>) -> Result<Self, serde_json::Error> {
-        Ok(Self(CoreMessage::new(typ, body)?))
+    /// Creates a new message with the given type and body
+    pub fn new(typ: impl Into<String>, body: impl Into<serde_json::Value>) -> Result<Self> {
+        let msg = CoreMessage::new(typ.into(), body.into())?;
+        Ok(Message(msg))
     }
 
-    /// Sets the sender of the message.
+    /// Sets the sender of the message
     pub fn from(mut self, from: impl Into<String>) -> Self {
-        self.0 = self.0.from(from);
+        self.0.from = Some(from.into());
         self
     }
 
-    /// Sets the recipients of the message.
+    /// Sets the recipients of the message
     pub fn to(mut self, to: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.0 = self.0.to(to);
+        self.0.to = Some(to.into_iter().map(|s| s.into()).collect());
         self
     }
 }
 
-impl From<CoreMessage> for Message {
-    fn from(msg: CoreMessage) -> Self {
-        Self(msg)
+/// Messages that can be sent to the message handler actor
+#[derive(Debug)]
+pub enum HandlerMessage {
+    /// Handle an incoming DIDComm message
+    HandleMessage(Message, oneshot::Sender<Result<()>>),
+    Process {
+        message: CoreMessage,
+        response: mpsc::Sender<Result<CoreMessage>>,
+    },
+}
+
+/// A handle to a message handler actor
+#[derive(Clone)]
+pub struct HandlerHandle {
+    sender: mpsc::Sender<HandlerMessage>,
+}
+
+impl HandlerHandle {
+    /// Handles a DIDComm message
+    pub async fn handle_message(&self, msg: Message) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.sender.send(HandlerMessage::HandleMessage(msg, tx)).await
+            .map_err(|_| tap_didcomm_core::error::Error::Actor("Failed to send message to handler".into()))?;
+        rx.await
+            .map_err(|_| tap_didcomm_core::error::Error::Actor("Handler was dropped".into()))?
+    }
+
+    pub async fn process(
+        &self,
+        typ: String,
+        body: Value,
+    ) -> Result<CoreMessage> {
+        let mut msg = CoreMessage::new(typ);
+        msg.body = body.to_string();
+        
+        let (tx, mut rx) = mpsc::channel(1);
+        self.sender.send(HandlerMessage::Process {
+            message: msg.clone(),
+            response: tx,
+        }).await.map_err(|_| Error::Actor("Failed to send message to actor".into()))?;
+
+        rx.recv().await
+            .ok_or_else(|| Error::Actor("Failed to receive response from actor".into()))?
     }
 }
 
-impl actix::Message for Message {
-    type Result = ();
-}
-
-/// A trait for actors that can handle DIDComm messages.
-///
-/// Implement this trait to create custom message handlers that can be
-/// registered with the DIDComm node. Handlers receive unpacked messages
-/// and can process them according to application-specific logic.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use tap_didcomm_node::actor::MessageHandler;
-/// use tap_didcomm_core::Message;
-///
-/// struct MyHandler;
-///
-/// impl MessageHandler for MyHandler {
-///     fn handle(&self, msg: Message) -> Result<(), Error> {
-///         println!("Received message: {:?}", msg);
-///         Ok(())
-///     }
-/// }
-/// ```
-pub trait MessageHandler: Actor {
-    /// Handle a DIDComm message.
-    ///
-    /// This method is called when a message is received that matches
-    /// the handler's registered type. The implementation should process
-    /// the message and return Ok(()) on success, or an appropriate error
-    /// if processing fails.
-    ///
-    /// # Arguments
-    ///
-    /// * `msg` - The unpacked DIDComm message to process
-    ///
-    /// # Returns
-    ///
-    /// A Result indicating success or failure of message processing
-    fn handle(&self, msg: Message) -> Result<()>;
-}
-
-/// A registry for message handlers.
-///
-/// The registry maps message types to their corresponding handlers, allowing
-/// the node to dispatch messages to the appropriate actor based on the
-/// message type.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use tap_didcomm_node::actor::HandlerRegistry;
-///
-/// let mut registry = HandlerRegistry::new();
-/// registry.register("test", handler.recipient());
-/// ```
+/// Registry for message handlers
 #[derive(Default)]
 pub struct HandlerRegistry {
-    /// The mapping of message types to their handlers
-    handlers: HashMap<String, Arc<Recipient<Message>>>,
+    handlers: Vec<HandlerHandle>,
 }
 
 impl HandlerRegistry {
-    /// Create a new empty handler registry.
-    ///
-    /// # Returns
-    ///
-    /// A new HandlerRegistry instance
+    /// Creates a new empty registry
     pub fn new() -> Self {
         Self {
-            handlers: HashMap::new(),
+            handlers: Vec::new(),
         }
     }
 
-    /// Register a handler for a specific message type.
-    ///
-    /// # Arguments
-    ///
-    /// * `msg_type` - The type of message to handle
-    /// * `handler` - The actor recipient that will handle messages of this type
-    pub fn register(&mut self, msg_type: &str, handler: Recipient<Message>) {
-        self.handlers.insert(msg_type.to_string(), Arc::new(handler));
+    /// Registers a new message handler
+    pub fn register(&mut self, handler: HandlerHandle) {
+        self.handlers.push(handler);
     }
 
-    /// Get the handler for a specific message type.
-    ///
-    /// # Arguments
-    ///
-    /// * `msg_type` - The type of message to get the handler for
-    ///
-    /// # Returns
-    ///
-    /// An Option containing the handler if one is registered for the message type
-    pub fn get_handler(&self, msg_type: &str) -> Option<Arc<Recipient<Message>>> {
-        self.handlers.get(msg_type).cloned()
+    /// Gets all registered handlers
+    pub fn get_handlers(&self) -> &[HandlerHandle] {
+        &self.handlers
     }
 }
 
-/// A simple logging actor that logs all received messages.
-pub struct LoggingActor {
-    /// The name of this actor (for logging).
-    name: String,
-}
+/// Spawns a new message handler actor
+pub fn spawn_message_handler() -> HandlerHandle {
+    let (tx, mut rx) = mpsc::channel(32);
+    let handle = HandlerHandle { sender: tx };
 
-impl LoggingActor {
-    /// Creates a new logging actor.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The name of this actor
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                HandlerMessage::HandleMessage(message, reply_tx) => {
+                    debug!("Handling message: {:?}", message);
+                    // Add your message handling logic here
+                    let result = Ok(());
+                    if reply_tx.send(result).is_err() {
+                        error!("Failed to send reply");
+                    }
+                }
+            }
         }
+    });
+
+    handle
+}
+
+pub struct Handler {
+    node: Arc<Node>,
+}
+
+impl Handler {
+    pub fn new(node: Arc<Node>) -> Self {
+        Self { node }
     }
-}
 
-impl Actor for LoggingActor {
-    type Context = Context<Self>;
-}
-
-impl Handler<Message> for LoggingActor {
-    type Result = ();
-
-    fn handle(&mut self, msg: Message, _ctx: &mut Self::Context) {
-        tracing::info!(
-            actor = self.name,
-            message_type = msg.0.typ.0,
-            message_id = msg.0.id.0,
-            "Received message"
-        );
-    }
-}
-
-impl MessageHandler for LoggingActor {
-    fn handle(&self, msg: Message) -> Result<()> {
-        self.handle(msg, &mut Context::new());
+    pub async fn run(self, mut rx: mpsc::Receiver<HandlerMessage>) -> Result<()> {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                HandlerMessage::Process { message, response } => {
+                    let result = self.node.process_message(message).await;
+                    let _ = response.send(result).await;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -213,20 +158,36 @@ impl MessageHandler for LoggingActor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::runtime::Builder;
     use serde_json::json;
 
-    #[actix_rt::test]
-    async fn test_logging_actor() {
-        // Create a logging actor
-        let actor = LoggingActor::new("test").start();
+    #[test]
+    fn test_message_handler() {
+        let rt = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
-        // Create a test message
-        let message = Message::new("test", json!({"hello": "world"}))
-            .unwrap()
-            .from("did:example:alice")
-            .to(vec!["did:example:bob"]);
+        rt.block_on(async {
+            let handler = spawn_message_handler();
+            let msg = Message::new("test", serde_json::json!({"test": "data"})).unwrap();
+            
+            let result = handler.handle_message(msg).await;
+            assert!(result.is_ok());
+        });
+    }
 
-        // Send the message to the actor
-        actor.send(message).await.unwrap();
+    #[tokio::test]
+    async fn test_handler() {
+        let node = Arc::new(Node::new());
+        let (tx, _rx) = mpsc::channel(32);
+        let handle = HandlerHandle { sender: tx };
+
+        let result = handle.process(
+            "test".into(),
+            json!({"test": "value"})
+        ).await;
+
+        assert!(result.is_ok());
     }
 } 

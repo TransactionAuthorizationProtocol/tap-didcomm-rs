@@ -1,99 +1,100 @@
-use mockall::mock;
-use mockall::predicate::*;
+use async_trait::async_trait;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+use serde_json::json;
 
-/// Test utilities for the DIDComm core library
-pub mod test_utils {
+use crate::{
+    error::Result,
+    plugin::{DIDCommPlugin, DIDResolver, Encryptor, Signer},
+};
+
+/// A mock plugin for testing DIDComm functionality.
+#[derive(Clone)]
+pub struct MockTestPlugin;
+
+#[async_trait]
+impl DIDResolver for MockTestPlugin {
+    async fn resolve(&self, did: &str) -> Result<String> {
+        Ok(json!({
+            "id": did,
+            "verificationMethod": [{
+                "id": format!("{}#key-1", did),
+                "type": "Ed25519VerificationKey2020",
+                "controller": did,
+                "publicKeyMultibase": "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+            }]
+        }).to_string())
+    }
+}
+
+#[async_trait]
+impl Signer for MockTestPlugin {
+    async fn sign(&self, message: &[u8], _from: &str) -> Result<Vec<u8>> {
+        // For testing, just base64 encode the message as a mock signature
+        Ok(STANDARD.encode(message).into_bytes())
+    }
+
+    async fn verify(&self, message: &[u8], signature: &[u8], _from: &str) -> Result<bool> {
+        // For testing, verify that the signature is the base64 encoded message
+        let decoded = STANDARD.decode(signature)?;
+        Ok(message == decoded)
+    }
+}
+
+#[async_trait]
+impl Encryptor for MockTestPlugin {
+    async fn encrypt(&self, message: &[u8], _to: Vec<String>, _from: Option<String>) -> Result<Vec<u8>> {
+        // For testing, just base64 encode the message as mock encryption
+        Ok(STANDARD.encode(message).into_bytes())
+    }
+
+    async fn decrypt(&self, message: &[u8], _recipient: String) -> Result<Vec<u8>> {
+        // For testing, base64 decode the message as mock decryption
+        Ok(STANDARD.decode(message)?)
+    }
+}
+
+impl DIDCommPlugin for MockTestPlugin {
+    fn as_resolver(&self) -> &dyn DIDResolver {
+        self
+    }
+
+    fn as_signer(&self) -> &dyn Signer {
+        self
+    }
+
+    fn as_encryptor(&self) -> &dyn Encryptor {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
     use super::*;
-    use crate::plugin::{DIDCommPlugin, DIDResolver, Encryptor, Signer};
-    use crate::error::Result;
-    use async_trait::async_trait;
+    use std::sync::Arc;
 
-    mock! {
-        pub TestPlugin {}
+    #[tokio::test]
+    async fn test_mock_plugin() {
+        let plugin = Arc::new(MockTestPlugin);
 
-        #[async_trait]
-        impl DIDResolver for TestPlugin {
-            async fn resolve(&self, did: &str) -> Result<String>;
-        }
+        // Test DID resolution
+        let did_doc = plugin.resolve("did:example:test").await.unwrap();
+        assert!(did_doc.contains("did:example:test"));
 
-        #[async_trait]
-        impl Signer for TestPlugin {
-            async fn sign(&self, message: &[u8], key_id: &str) -> Result<Vec<u8>>;
-            async fn verify(&self, message: &[u8], signature: &[u8], key_id: &str) -> Result<bool>;
-        }
+        // Test signing and verification
+        let message = b"test message";
+        let signature = plugin.sign(message, "did:example:test").await.unwrap();
+        let verified = plugin.verify(message, &signature, "did:example:test").await.unwrap();
+        assert!(verified);
 
-        #[async_trait]
-        impl Encryptor for TestPlugin {
-            async fn encrypt(&self, message: &[u8], recipients: Vec<String>, from: Option<String>) -> Result<Vec<u8>>;
-            async fn decrypt(&self, message: &[u8], recipient: String) -> Result<Vec<u8>>;
-        }
+        // Test encryption and decryption
+        let encrypted = plugin.encrypt(
+            message,
+            vec!["did:example:recipient".to_string()],
+            Some("did:example:sender".to_string()),
+        ).await.unwrap();
 
-        impl DIDCommPlugin for TestPlugin {
-            fn as_resolver(&self) -> &dyn DIDResolver {
-                self
-            }
-            fn as_signer(&self) -> &dyn Signer {
-                self
-            }
-            fn as_encryptor(&self) -> &dyn Encryptor {
-                self
-            }
-        }
+        let decrypted = plugin.decrypt(&encrypted, "did:example:recipient".to_string()).await.unwrap();
+        assert_eq!(decrypted, message);
     }
-
-    impl Clone for MockTestPlugin {
-        fn clone(&self) -> Self {
-            MockTestPlugin::new()
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[tokio::test]
-        async fn test_resolve() {
-            let mut plugin = MockTestPlugin::new();
-            plugin
-                .expect_resolve()
-                .with(eq("did:example:123"))
-                .returning(|_| Ok("resolved".to_string()));
-
-            let result = plugin.resolve("did:example:123").await.unwrap();
-            assert_eq!(result, "resolved");
-        }
-
-        #[tokio::test]
-        async fn test_sign() {
-            let mut plugin = MockTestPlugin::new();
-            let test_bytes = b"test".as_slice();
-
-            plugin
-                .expect_sign()
-                .with(eq(test_bytes), eq("key1"))
-                .returning(|_, _| Ok(vec![1, 2, 3, 4]));
-
-            let result = plugin.sign(test_bytes, "key1").await.unwrap();
-            assert_eq!(result, vec![1, 2, 3, 4]);
-        }
-
-        #[tokio::test]
-        async fn test_encrypt() {
-            let mut plugin = MockTestPlugin::new();
-            let test_bytes = b"test".as_slice();
-            let recipients = vec![String::from("did:example:bob")];
-            let from = Some(String::from("did:example:alice"));
-
-            plugin
-                .expect_encrypt()
-                .with(eq(test_bytes), eq(recipients.clone()), eq(from.clone()))
-                .returning(|_, _, _| Ok(vec![5, 6, 7, 8]));
-
-            let result = plugin
-                .encrypt(test_bytes, recipients, from)
-                .await
-                .unwrap();
-            assert_eq!(result, vec![5, 6, 7, 8]);
-        }
-    }
-} 
+}

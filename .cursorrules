@@ -26,78 +26,127 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 - Prioritize clear and maintainable code.
 - Check off tasks in the project plan file as soon as they are complete.
 - Ensure CI/CD integration is updated as features are added.
+- Always build the entire project before fixing a task as a compilation error would cause the entire project to fail.
 - Always ensure that tests are run before finishing a task
 - Aim for 100% test coverage on all modules.
 - For WASM components, ensure proper bindings with `wasm-bindgen` and test in a JavaScript environment.
 - Provide TypeScript definitions that accurately reflect the WASM APIs.
 - When running `cargo doc` please do not use the `--open` flag.
 
+# Typescript Rules
+
+- Always write idiomatic Typescript code.
+- Prefer using interfaces and enums over types
+- Prefer using pnpm as the package manager
+- Every new function or module must include comprehensive unit tests using vitest
+- Use Typescript's error handling best practices (Result<T, E>, ? operator, etc.).
+- Document all public APIs with comprehensive typedoc comments.
+- Remember that any WASM code needs to be compiled from the Rust code in the `tap-didcomm-core` and `tap-didcomm-node` packages.
+- Always check you are in the correct directory before running any commands.
+
 # Lessons
 
 ## User Specified Lessons
-- Always resolve the warnings and errors in the code before completing a task
-- Always run root level tests before completing a task
+- Always resolve the warnings and errors in the code before starting and completing a task  
+- Always run root level tests before starting and completing a task
+- When fixing root level failures and warnings do it in this order:
+  - `cargo fmt`
+  - `cargo clippy`
+  - `cargo test`
+- Work through each cask in order:
+  - `tap-didcomm-core`
+  - `tap-didcomm-node`
+  - `tap-didcomm-ts`
+  - `tap-didcomm-web`
+- For the `tap-didcomm-ts` package, always use the `pnpm` command to install dependencies
+- For changes in the Rust code, run the `build:wasm` command in the `tap-didcomm-ts` directory to update WASM artifacts
 
 ## Cursor learned
+
+### Workspace Configuration
+- Keep WASM-specific dependencies at the crate level rather than in workspace dependencies
+- Handle getrandom dependency at the crate level with appropriate features
+- Use separate WASM targets for web and Node.js builds
+- Ensure consistent versioning of WASM-related dependencies across crates
 
 ### DIDComm Testing
 - When implementing mock plugins for DIDComm testing, ensure base64 encoding/decoding is handled correctly
 - For mock encryption/decryption, use base64 encoding as a simple test mechanism
 - Test both success and error cases for message handling
 - Ensure proper error handling in async operations
+- Avoid duplicate trait implementations by using derive macros
+- Use Arc for thread-safe sharing of mock plugins in tests
+- Keep mock implementations simple but functional for testing purposes
+- Implement all required traits for mock plugins (DIDResolver, Signer, Encryptor)
+
+### Mock Plugin Implementation
+- Use #[async_trait] macro consistently for async trait implementations
+- Implement proper error conversion between core and node crates
+- Keep mock implementations stateless when possible
+- Use base64 encoding/decoding for simple mock cryptographic operations
+- Return meaningful test data that can be validated
+- Include comprehensive test cases for each mock implementation
+
+### Test Organization
+- Group tests logically by functionality
+- Test both success and error paths
+- Use descriptive test names that indicate what is being tested
+- Include setup and teardown code where needed
+- Mock external dependencies appropriately
+- Test edge cases and boundary conditions
+- Ensure test isolation and independence
+
+### Error Handling
+- Implement proper error conversion between crates
+- Use thiserror for deriving error implementations
+- Ensure error messages are descriptive and helpful
+- Handle all possible error cases in mock implementations
+- Propagate errors appropriately using the ? operator
+- Test error conditions explicitly
 
 ### JWE Implementation
 - Support both X25519 and NIST curves (P-256, P-384, P-521) for ECDH key agreement
-- Ensure public keys for NIST curves are in uncompressed format
-- Use zeroize trait for secure memory cleanup of sensitive key material
-- Implement proper key derivation using HKDF with appropriate info strings
-- Test key agreement and derivation with all supported curves
-- Ensure proper error handling for invalid key material and formats
-- Validate all base64url-encoded fields during decryption
-- Test both anoncrypt and authcrypt flows with roundtrip encryption/decryption
-- When implementing multiple recipients, ensure each recipient can decrypt with their own key
-- Share protected header and content encryption across all recipients for efficiency
-
-### Workspace Configuration
-- For Rust 2021 edition projects, explicitly set `workspace.resolver = "2"` in the root Cargo.toml
-- Keep workspace manifest keys minimal, removing unused ones like name, version, etc. when using a virtual manifest
+- Ensure proper key derivation using HKDF with appropriate info strings
+- Implement proper key wrapping and unwrapping
+- Handle all supported content encryption algorithms
+- Test roundtrip encryption/decryption with all supported curves
+- Validate all base64url-encoded fields
+- Implement proper error handling for invalid key material
 
 # Scratchpad
 
-## Current Task: Implementing JWE Module
+## Current Task: Fixing Tests in tap-didcomm-core
 
-### Progress
-[X] Implement key agreement algorithms (ECDH-ES, ECDH-1PU)
-[X] Add support for NIST curves (P-256, P-384, P-521)
-[X] Implement key wrapping (AES-KW)
-[X] Implement content encryption algorithms
-  [X] AES-256-GCM
-  [X] XChaCha20-Poly1305
-  [X] AES-256-CBC-HMAC-SHA-512
-[X] Create JWE message structure
-[X] Implement encryption (anoncrypt, authcrypt)
-[X] Implement decryption
-[X] Add comprehensive tests
-  [X] Key agreement tests
-  [X] Content encryption tests
-  [X] End-to-end encryption/decryption tests
-  [X] Error handling tests
-[X] Add support for multiple recipients
-  [X] Update JWE message structure
-  [X] Modify encryption methods
-  [X] Enhance decryption to try each recipient
-  [X] Add tests for multiple recipients
+### Overview
+Need to fix several test-related issues in the tap-didcomm-core project:
+1. Plugin trait implementation issues
+2. Message type unwrap method missing
+3. Base64 error conversion missing
+4. Async trait Send requirements
+5. Sized trait bounds for plugin methods
+
+### Progress Tracking
+[X] Identify current test failures
+[ ] Fix plugin trait implementations
+  [ ] Add Sized bounds to as_* methods
+  [ ] Fix async trait Send requirements
+[ ] Fix Message type issues
+  [ ] Add proper error handling for Message::new
+[ ] Add base64 error conversion
+[ ] Fix mock testing issues
+  [ ] Update predicates for test values
+  [ ] Fix mock expectations
 
 ### Next Steps
-1. Add support for APU/APV parameters in key derivation
-2. Add support for compressed NIST curve points
-3. Add more test vectors from RFC 7516
+1. Fix plugin trait implementations first as they affect the most tests
+2. Add proper error handling for Message type
+3. Implement From trait for base64 errors
+4. Update mock tests with correct predicates
 
-### Completed
-1. Implemented complete JWE encryption/decryption flow
-2. Added support for all required curves and algorithms
-3. Added comprehensive test suite
-4. Ensured proper error handling and validation
-5. Used secure memory handling for sensitive data
-6. Added support for multiple recipients with shared content encryption
+### Notes
+- Need to ensure Send trait bounds are properly handled
+- Base64 errors need proper conversion to our Error type
+- Mock testing framework needs adjustment for byte array comparisons
+- Plugin trait methods need proper Sized bounds
+
 
