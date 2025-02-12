@@ -1,6 +1,6 @@
-//! Core DIDComm node implementation.
+//! Core `DIDComm` node implementation.
 //!
-//! This module provides the main DIDComm node implementation that handles:
+//! This module provides the main `DIDComm` node implementation that handles:
 //! - Message receiving and unpacking
 //! - Message routing to appropriate handlers
 //! - Message dispatch to other nodes
@@ -16,36 +16,38 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use tap_didcomm_node::{DIDCommNode, NodeConfig};
+//! use tap_didcomm_node::{DIDCommNode, NodeConfig, HandlerHandle};
 //! use tap_didcomm_core::Message;
+//! use tap_didcomm_node::mock::MockPlugin;
+//! use tokio::sync::mpsc;
 //!
-//! async fn example() {
+//! fn example() -> tap_didcomm_node::error::Result<()> {
 //!     let config = NodeConfig::default();
-//!     let mut node = DIDCommNode::new(config, your_plugin);
-//!
+//!     let mut node = DIDCommNode::new(config, MockPlugin::new());
+//!     
+//!     // Create a handler
+//!     let (tx, _rx) = mpsc::channel(32);
+//!     let handler = HandlerHandle::new(tx);
+//!     
 //!     // Register message handlers
-//!     node.register_handler("test", your_handler.recipient());
-//!
+//!     node.register_handler("test", handler);
+//!     
 //!     // Start processing messages
-//!     node.start().await;
+//!     node.start()
 //! }
 //! ```
 
-use actix::prelude::*;
 use std::collections::HashMap;
-use tap_didcomm_core::{
-    plugin::DIDCommPlugin,
-    types::PackingType,
-    error::Error as CoreError,
-};
-use tracing::{debug, error, info};
+use tap_didcomm_core::{pack_message, unpack_message, DIDCommPlugin, Message, PackingType};
+use tracing::{error, info};
 
 use crate::{
-    actor::Message,
+    actor::{HandlerHandle, Message as ActorMessage},
+    dispatch::{dispatch_message, DispatchConfig},
     error::{Error, Result},
 };
 
-/// Configuration options for a DIDComm node.
+/// Configuration for a `DIDComm` node.
 ///
 /// This struct contains all the configuration parameters that control
 /// how the node operates, including networking, message handling,
@@ -84,7 +86,7 @@ impl Default for NodeConfig {
     fn default() -> Self {
         Self {
             port: 8080,
-            host: "localhost".to_string(),
+            host: "127.0.0.1".to_string(),
             use_https: false,
             max_message_size: 1024 * 1024, // 1MB
             dispatch: DispatchConfig::default(),
@@ -92,9 +94,9 @@ impl Default for NodeConfig {
     }
 }
 
-/// A DIDComm node that can send and receive messages.
+/// A `DIDComm` node that can send and receive messages.
 ///
-/// The DIDCommNode is the main entry point for DIDComm operations. It handles:
+/// The `DIDCommNode` is the main entry point for `DIDComm` operations. It handles:
 /// - Receiving and unpacking messages
 /// - Routing messages to appropriate handlers
 /// - Dispatching messages to other nodes
@@ -103,17 +105,24 @@ impl Default for NodeConfig {
 /// # Examples
 ///
 /// ```rust,no_run
-/// use tap_didcomm_node::{DIDCommNode, NodeConfig};
+/// use tap_didcomm_node::{DIDCommNode, NodeConfig, HandlerHandle, error::Result};
+/// use tap_didcomm_node::mock::MockPlugin;
+/// use tokio::sync::mpsc;
 ///
-/// async fn example() {
+/// async fn example() -> Result<()> {
 ///     let config = NodeConfig::default();
-///     let mut node = DIDCommNode::new(config, your_plugin);
-///
-///     // Register a message handler
-///     node.register_handler("test", your_handler.recipient());
-///
+///     let mut node = DIDCommNode::new(config, MockPlugin::new());
+///     
+///     // Create a handler
+///     let (tx, _rx) = mpsc::channel(32);
+///     let handler = HandlerHandle::new(tx);
+///     
+///     // Register message handlers
+///     node.register_handler("test", handler);
+///     
 ///     // Process an incoming message
-///     node.receive(&packed_message).await?;
+///     let message = b"packed message bytes";
+///     node.receive(message).await
 /// }
 /// ```
 pub struct DIDCommNode {
@@ -124,11 +133,11 @@ pub struct DIDCommNode {
     plugin: Box<dyn DIDCommPlugin>,
 
     /// Registry of message handlers
-    handlers: HashMap<String, Vec<Recipient<Message>>>,
+    handlers: HashMap<String, Vec<HandlerHandle>>,
 }
 
 impl DIDCommNode {
-    /// Create a new DIDComm node.
+    /// Create a new `DIDComm` node.
     ///
     /// # Arguments
     ///
@@ -137,7 +146,8 @@ impl DIDCommNode {
     ///
     /// # Returns
     ///
-    /// A new DIDCommNode instance
+    /// A new `DIDCommNode` instance
+    #[must_use]
     pub fn new(config: NodeConfig, plugin: impl DIDCommPlugin + 'static) -> Self {
         Self {
             config,
@@ -151,18 +161,14 @@ impl DIDCommNode {
     /// # Arguments
     ///
     /// * `msg_type` - The type of message to handle
-    /// * `handler` - The actor recipient that will handle messages of this type
-    pub fn register_handler(
-        &mut self,
-        msg_type: impl Into<String>,
-        handler: Recipient<Message>,
-    ) {
+    /// * `handler` - The handler that will process messages of this type
+    pub fn register_handler(&mut self, msg_type: impl Into<String>, handler: HandlerHandle) {
         let msg_type = msg_type.into();
         self.handlers
             .entry(msg_type.clone())
             .or_default()
             .push(handler);
-        info!("Registered handler for message type: {}", msg_type);
+        info!("Registered handler for message type: {msg_type}");
     }
 
     /// Start the node and begin processing messages.
@@ -173,11 +179,14 @@ impl DIDCommNode {
     /// # Returns
     ///
     /// A future that completes when the node is shut down
-    pub async fn start(&self) -> Result<()> {
-        tracing::info!(
-            host = self.config.host,
-            port = self.config.port,
-            "Starting DIDComm node"
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node fails to start
+    pub fn start(&self) -> Result<()> {
+        info!(
+            "Starting DIDComm node on {}:{}",
+            self.config.host, self.config.port
         );
         Ok(())
     }
@@ -194,29 +203,36 @@ impl DIDCommNode {
     /// # Returns
     ///
     /// A Result indicating success or failure of message processing
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The message is not valid UTF-8
+    /// - The message cannot be unpacked
+    /// - The message cannot be routed to a handler
     pub async fn receive(&self, packed_msg: &[u8]) -> Result<()> {
         let msg = unpack_message(
             std::str::from_utf8(packed_msg)
-                .map_err(|e| Error::InvalidFormat(format!("Invalid UTF-8: {}", e)))?,
+                .map_err(|e| Error::InvalidFormat(format!("Invalid UTF-8: {e}")))?,
             self.plugin.as_ref(),
             None,
         )
         .await
         .map_err(Error::Core)?;
 
-        let msg = Message(msg);
-        
-        // Send to all handlers
-        for handler in self.handlers.get_handlers() {
-            if let Err(e) = handler.handle_message(msg.clone()).await {
-                tracing::error!(error = ?e, "Handler failed to process message");
+        // Dispatch to registered handlers
+        if let Some(handlers) = self.handlers.get(&msg.typ.0) {
+            for handler in handlers {
+                if let Err(e) = handler.send(ActorMessage(msg.clone())).await {
+                    error!("Failed to send message to handler: {e}");
+                }
             }
         }
 
         Ok(())
     }
 
-    /// Send a message to another DIDComm node.
+    /// Send a message to another `DIDComm` node.
     ///
     /// This method packs and dispatches a message to its intended recipient.
     ///
@@ -228,159 +244,88 @@ impl DIDCommNode {
     /// # Returns
     ///
     /// A Result indicating success or failure of message sending
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The message cannot be packed
+    /// - The message cannot be dispatched
     pub async fn send(&self, message: &Message, packing: PackingType) -> Result<()> {
-        let packed = pack_message(&message.0, self.plugin.as_ref(), packing)
+        let _packed = pack_message(message, self.plugin.as_ref(), packing)
             .await
             .map_err(Error::Core)?;
 
-        dispatch_message(&message.0, &self.config.dispatch).await?;
+        dispatch_message(message, &self.config.dispatch).await?;
 
         Ok(())
     }
 
     /// Returns a reference to the node's configuration.
+    #[must_use]
     pub fn config(&self) -> &NodeConfig {
         &self.config
     }
 
     /// Returns a reference to the node's plugin.
+    #[must_use]
     pub fn plugin(&self) -> &dyn DIDCommPlugin {
         self.plugin.as_ref()
-    }
-}
-
-impl From<CoreError> for Error {
-    fn from(err: CoreError) -> Self {
-        Error::Core(err)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use actix::Actor;
+    use crate::mock::MockPlugin;
     use serde_json::json;
+    use tokio::sync::mpsc;
 
-    // Mock message handler actor
-    struct MockHandler {
+    struct TestHandler {
         received: bool,
+        tx: mpsc::Sender<()>,
     }
 
-    impl Actor for MockHandler {
-        type Context = Context<Self>;
-    }
-
-    impl Handler<Message> for MockHandler {
-        type Result = ();
-
-        fn handle(&mut self, _msg: Message, _ctx: &mut Self::Context) {
-            self.received = true;
+    impl TestHandler {
+        fn new(tx: mpsc::Sender<()>) -> Self {
+            Self {
+                received: false,
+                tx,
+            }
         }
-    }
-
-    impl MockHandler {
-        fn new() -> Self {
-            Self { received: false }
-        }
-    }
-
-    // Mock plugin
-    struct MockPlugin;
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::DIDResolver for MockPlugin {
-        async fn resolve(&self, _did: &str) -> tap_didcomm_core::error::Result<String> {
-            Ok("{}".to_string())
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Signer for MockPlugin {
-        async fn sign(
-            &self,
-            message: &[u8],
-            _from: &str,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn verify(&self, _message: &[u8], _signature: &[u8], _from: &str) -> tap_didcomm_core::error::Result<bool> {
-            Ok(true)
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl tap_didcomm_core::plugin::Encryptor for MockPlugin {
-        async fn encrypt(
-            &self,
-            message: &[u8],
-            _to: Vec<String>,
-            _from: Option<String>,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-
-        async fn decrypt(
-            &self,
-            message: &[u8],
-            _recipient: String,
-        ) -> tap_didcomm_core::error::Result<Vec<u8>> {
-            Ok(message.to_vec())
-        }
-    }
-
-    impl tap_didcomm_core::plugin::DIDCommPlugin for MockPlugin {
-        fn as_resolver(&self) -> &dyn tap_didcomm_core::plugin::DIDResolver {
-            self
-        }
-
-        fn as_signer(&self) -> &dyn tap_didcomm_core::plugin::Signer {
-            self
-        }
-
-        fn as_encryptor(&self) -> &dyn tap_didcomm_core::plugin::Encryptor {
-            self
-        }
-    }
-
-    #[actix_rt::test]
-    async fn test_receive_message() {
-        // Create a mock handler
-        let handler = MockHandler::new().start();
-
-        // Create a node
-        let mut node = DIDCommNode::new(
-            NodeConfig {
-                did: "did:example:node".into(),
-                default_packing: PackingType::Signed,
-                base_url: None,
-            },
-            MockPlugin,
-        );
-
-        // Register the handler
-        node.register_handler("test", handler.recipient());
-
-        // Create and pack a test message
-        let message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
-            .unwrap()
-            .from("did:example:alice")
-            .to(vec!["did:example:node"]);
-
-        let packed = tap_didcomm_core::pack::pack_message(&message, &MockPlugin, PackingType::Signed)
-            .await
-            .unwrap();
-
-        // Receive the message
-        node.receive(&packed).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_message_handling() {
-        let _message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
+        let (tx, mut rx) = mpsc::channel(1);
+        let (handler_tx, mut handler_rx) = mpsc::channel(32);
+        let handler = HandlerHandle::new(handler_tx);
+
+        // Create a node
+        let mut node = DIDCommNode::new(NodeConfig::default(), MockPlugin);
+
+        // Register the handler
+        node.register_handler("test", handler);
+
+        // Create and pack a test message
+        let message = tap_didcomm_core::Message::new("test", json!({"hello": "world"}))
             .unwrap()
-            .to(vec!["did:example:bob".to_string()])
-            .from("did:example:alice");
-        // ... rest of the test ...
+            .from("did:example:sender");
+
+        let packed = pack_message(&message, node.plugin(), PackingType::Signed)
+            .await
+            .unwrap();
+
+        // Start handler task
+        tokio::spawn(async move {
+            while let Some(msg) = handler_rx.recv().await {
+                tx.send(()).await.unwrap();
+            }
+        });
+
+        // Receive the message
+        node.receive(packed.as_bytes()).await.unwrap();
+
+        // Wait for handler to process message
+        rx.recv().await.unwrap();
     }
-} 
+}

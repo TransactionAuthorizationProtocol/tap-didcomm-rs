@@ -115,38 +115,45 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 
 # Scratchpad
 
-## Current Task: Fixing Tests in tap-didcomm-core
+## Current Task: Build and Test tap-didcomm-node
 
 ### Overview
-Need to fix several test-related issues in the tap-didcomm-core project:
-1. Plugin trait implementation issues
-2. Message type unwrap method missing
-3. Base64 error conversion missing
-4. Async trait Send requirements
-5. Sized trait bounds for plugin methods
+Moving on to the tap-didcomm-node crate after completing tap-didcomm-core fixes. Need to ensure all builds and tests are passing.
 
 ### Progress Tracking
-[X] Identify current test failures
-[ ] Fix plugin trait implementations
-  [ ] Add Sized bounds to as_* methods
-  [ ] Fix async trait Send requirements
-[ ] Fix Message type issues
-  [ ] Add proper error handling for Message::new
-[ ] Add base64 error conversion
-[ ] Fix mock testing issues
-  [ ] Update predicates for test values
-  [ ] Fix mock expectations
+[X] Run initial build and test to identify issues
+  [X] Run cargo fmt
+  [ ] Run cargo clippy
+  [ ] Run cargo test
+[ ] Review and fix any compilation errors
+  [ ] Fix mock plugin implementation
+  [ ] Fix node module errors
+  [ ] Fix actor system errors
+[ ] Review and fix any clippy warnings
+[ ] Review and fix any test failures
+[ ] Verify WASM build functionality
+  [ ] Check wasm-bindgen configuration
+  [ ] Verify Node.js specific features
+  [ ] Test WASM exports
+
+### Current Issues Identified
+1. Mock plugin implementation has incorrect trait implementation
+2. Private module access issues from tap-didcomm-core
+3. Missing Node module implementation
+4. Actor system needs proper error handling
+5. WASM bindings need to be verified
 
 ### Next Steps
-1. Fix plugin trait implementations first as they affect the most tests
-2. Add proper error handling for Message type
-3. Implement From trait for base64 errors
-4. Update mock tests with correct predicates
+1. Fix mock plugin implementation to match core traits
+2. Update dependencies and module access
+3. Implement proper Node module
+4. Fix actor system implementation
+5. Verify WASM integration
 
 ### Notes
-- Need to ensure Send trait bounds are properly handled
-- Base64 errors need proper conversion to our Error type
-- Mock testing framework needs adjustment for byte array comparisons
-- Plugin trait methods need proper Sized bounds
+- Need to ensure compatibility with tap-didcomm-core changes
+- Watch for any async trait implementations that might need updating
+- Verify error handling between core and node crates
+- Check mock implementations for Node.js specific features
 
 

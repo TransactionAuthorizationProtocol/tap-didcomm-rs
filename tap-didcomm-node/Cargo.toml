@@ -16,18 +16,16 @@ tap-didcomm-core = { path = "../tap-didcomm-core", features = ["wasm"] }
 # Workspace dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 anyhow = { workspace = true }
 futures = "0.3"
+base64 = { workspace = true }
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }
-
-# Actor system
-actix-rt = "2.9"
 
 # WASM support (optional)
 wasm-bindgen = { version = "0.2.91", optional = true }
@@ -37,9 +35,6 @@ web-sys = { version = "0.3.68", features = ["Window", "Performance"], optional =
 console_error_panic_hook = { version = "0.1.7", optional = true }
 serde-wasm-bindgen = { version = "0.6.5", optional = true }
 getrandom = { version = "0.2.12", features = ["js"], optional = true }
-
-# Base64 dependency
-base64 = "0.21"
 
 [dev-dependencies]
 tokio-test = "0.4"

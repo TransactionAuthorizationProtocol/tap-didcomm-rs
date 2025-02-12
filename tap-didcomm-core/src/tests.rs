@@ -8,7 +8,7 @@ use crate::{
     plugin::{DIDCommPlugin, DIDResolver, Encryptor, Signer},
 };
 
-/// A mock plugin for testing DIDComm functionality.
+/// A mock plugin for testing `DIDComm` functionality.
 #[derive(Clone)]
 pub struct MockTestPlugin;
 
@@ -23,7 +23,8 @@ impl DIDResolver for MockTestPlugin {
                 "controller": did,
                 "publicKeyMultibase": "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
             }]
-        }).to_string())
+        })
+        .to_string())
     }
 }
 
@@ -43,7 +44,12 @@ impl Signer for MockTestPlugin {
 
 #[async_trait]
 impl Encryptor for MockTestPlugin {
-    async fn encrypt(&self, message: &[u8], _to: Vec<String>, _from: Option<String>) -> Result<Vec<u8>> {
+    async fn encrypt(
+        &self,
+        message: &[u8],
+        _to: Vec<String>,
+        _from: Option<String>,
+    ) -> Result<Vec<u8>> {
         // For testing, just base64 encode the message as mock encryption
         Ok(STANDARD.encode(message).into_bytes())
     }
@@ -84,17 +90,26 @@ mod tests {
         // Test signing and verification
         let message = b"test message";
         let signature = plugin.sign(message, "did:example:test").await.unwrap();
-        let verified = plugin.verify(message, &signature, "did:example:test").await.unwrap();
+        let verified = plugin
+            .verify(message, &signature, "did:example:test")
+            .await
+            .unwrap();
         assert!(verified);
 
         // Test encryption and decryption
-        let encrypted = plugin.encrypt(
-            message,
-            vec!["did:example:recipient".to_string()],
-            Some("did:example:sender".to_string()),
-        ).await.unwrap();
+        let encrypted = plugin
+            .encrypt(
+                message,
+                vec!["did:example:recipient".to_string()],
+                Some("did:example:sender".to_string()),
+            )
+            .await
+            .unwrap();
 
-        let decrypted = plugin.decrypt(&encrypted, "did:example:recipient".to_string()).await.unwrap();
+        let decrypted = plugin
+            .decrypt(&encrypted, "did:example:recipient".to_string())
+            .await
+            .unwrap();
         assert_eq!(decrypted, message);
     }
 }

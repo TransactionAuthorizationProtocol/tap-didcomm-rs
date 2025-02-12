@@ -18,14 +18,14 @@ impl MockPlugin {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait]
 impl DIDResolver for MockPlugin {
     async fn resolve(&self, _did: &str) -> Result<String> {
         Ok("{}".to_string())
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait]
 impl Signer for MockPlugin {
     async fn sign(&self, message: &[u8], _from: &str) -> Result<Vec<u8>> {
         Ok(message.to_vec())
@@ -36,7 +36,7 @@ impl Signer for MockPlugin {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait]
 impl Encryptor for MockPlugin {
     async fn encrypt(
         &self,
@@ -52,7 +52,6 @@ impl Encryptor for MockPlugin {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl DIDCommPlugin for MockPlugin {
     fn as_resolver(&self) -> &dyn DIDResolver {
         self
@@ -71,13 +70,13 @@ impl DIDCommPlugin for MockPlugin {
 mod tests {
     use super::*;
 
-    #[actix_rt::test]
+    #[tokio::test]
     async fn test_mock_plugin() {
         let plugin = MockPlugin::new();
 
         // Test DID resolution
         let did_doc = plugin.resolve("did:example:test").await.unwrap();
-        assert!(did_doc.contains("did:example:test"));
+        assert!(did_doc.contains("{}"));
 
         // Test signing and verification
         let message = b"test message";

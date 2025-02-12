@@ -9,11 +9,13 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-mod error;
-mod pack;
-mod plugin;
-mod tests;
-mod types;
+pub mod error;
+pub mod pack;
+pub mod plugin;
+pub mod types;
+
+#[cfg(test)]
+pub(crate) mod tests;
 
 pub use error::{Error, Result};
 pub use pack::{pack_message, unpack_message};

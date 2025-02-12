@@ -1,8 +1,8 @@
-//! Error types for the DIDComm core library.
+//! Error types for the `DIDComm` core library.
 
 use thiserror::Error;
 
-/// Error type for the DIDComm core library.
+/// Error type for the `DIDComm` core library.
 #[derive(Debug, Error)]
 pub enum Error {
     /// Invalid message format
@@ -56,5 +56,5 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-/// Result type for the DIDComm core library.
+/// Result type for the `DIDComm` core library.
 pub type Result<T> = std::result::Result<T, Error>;
