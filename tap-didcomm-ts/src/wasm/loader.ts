@@ -1,22 +1,19 @@
 /**
- * WASM module loading utilities for DIDComm.
- * Handles dynamic loading of WASM modules in both Node.js and browser environments.
+ * WASM module loader and initialization utilities.
+ * This module handles loading and initializing WebAssembly modules for DIDComm operations.
+ * @module wasm/loader
  */
 
 import type { CoreWasmModule, NodeWasmModule } from './types';
 import type { DIDCommResult } from '../types';
 
-// Default paths for WASM modules
-const DEFAULT_CORE_WASM_PATH = '@tap-didcomm/core';
-const DEFAULT_NODE_WASM_PATH = '@tap-didcomm/node';
-
 /**
- * Configuration for WASM loading
+ * Options for loading and initializing WASM modules.
  */
 export interface WasmLoadOptions {
   /** Whether to use Node.js-specific optimizations */
   useNode?: boolean;
-  /** Memory configuration */
+  /** Memory configuration for the WASM module */
   memory?: {
     /** Initial memory pages (64KB each) */
     initialPages?: number;
@@ -26,7 +23,8 @@ export interface WasmLoadOptions {
 }
 
 /**
- * Environment detection result
+ * Information about the execution environment.
+ * Used to determine the appropriate WASM loading strategy.
  */
 export interface Environment {
   /** Whether running in Node.js */
@@ -35,175 +33,162 @@ export interface Environment {
   isBrowser: boolean;
   /** Whether running in a Web Worker */
   isWebWorker: boolean;
-  /** Whether WASM is supported */
+  /** Whether WebAssembly is supported */
   hasWasm: boolean;
-  /** Whether SharedArrayBuffer is supported */
+  /** Whether SharedArrayBuffer is supported (needed for threading) */
   hasSharedArrayBuffer: boolean;
 }
 
 /**
- * Detects the current runtime environment
+ * Detects the current execution environment.
+ * This helps determine which WASM loading strategy to use.
+ *
+ * @returns Information about the current environment
+ *
+ * @example
+ * ```typescript
+ * const env = detectEnvironment();
+ * if (env.hasWasm && env.hasSharedArrayBuffer) {
+ *   console.log('Environment supports threaded WASM');
+ * }
+ * ```
  */
 export function detectEnvironment(): Environment {
   const isNode =
-    typeof process !== 'undefined' &&
-    process.versions != null &&
-    typeof process.versions.node === 'string';
+    typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+
+  const isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+
   const isWebWorker =
     typeof self === 'object' &&
     self.constructor &&
     self.constructor.name === 'DedicatedWorkerGlobalScope';
-  const isBrowser = !isNode && !isWebWorker && typeof window !== 'undefined';
+
+  const hasWasm = typeof WebAssembly !== 'undefined' && WebAssembly.validate != null;
+
+  const hasSharedArrayBuffer =
+    typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
 
   return {
     isNode,
     isBrowser,
     isWebWorker,
-    hasWasm: typeof WebAssembly === 'object',
-    hasSharedArrayBuffer: typeof SharedArrayBuffer === 'function',
+    hasWasm,
+    hasSharedArrayBuffer,
   };
 }
 
 /**
- * Initializes WebAssembly memory
+ * Initializes WebAssembly memory with the specified configuration.
+ * This creates a new WebAssembly.Memory instance that can be used by WASM modules.
+ *
+ * @param options - Memory configuration options
+ * @returns A promise that resolves to the initialized memory
+ * @throws If memory initialization fails or limits are invalid
+ *
+ * @example
+ * ```typescript
+ * const memory = await initializeMemory({
+ *   initialPages: 16,
+ *   maximumPages: 256
+ * });
+ * ```
  */
 export async function initializeMemory(
   options: WasmLoadOptions = {}
 ): Promise<DIDCommResult<WebAssembly.Memory>> {
   try {
-    const { initialPages = 16, maximumPages = 100 } = options.memory || {};
-    const env = detectEnvironment();
+    const { memory = {} } = options;
+    const { initialPages = 16, maximumPages = 100 } = memory;
 
-    // Validate memory parameters
-    if (initialPages <= 0 || initialPages > 65536) {
-      return {
-        success: false,
-        error: {
-          code: 'MEMORY_ERROR',
-          message: 'Initial memory pages must be between 1 and 65536',
-        },
-      };
+    if (initialPages < 0 || maximumPages < 0) {
+      throw new Error('Memory pages cannot be negative');
     }
 
-    if (maximumPages < initialPages || maximumPages > 65536) {
-      return {
-        success: false,
-        error: {
-          code: 'MEMORY_ERROR',
-          message: 'Maximum memory pages must be between initial pages and 65536',
-        },
-      };
+    if (initialPages > maximumPages) {
+      throw new Error('Initial pages cannot exceed maximum pages');
     }
 
-    try {
-      const memory = new WebAssembly.Memory({
-        initial: initialPages,
-        maximum: maximumPages,
-        shared: env.hasSharedArrayBuffer,
-      });
+    const wasmMemory = new WebAssembly.Memory({
+      initial: initialPages,
+      maximum: maximumPages,
+      shared: detectEnvironment().hasSharedArrayBuffer,
+    });
 
-      // Test memory growth within limits
-      const currentPages = memory.buffer.byteLength / 65536;
-      if (currentPages !== initialPages) {
-        throw new Error('Memory initialization failed');
-      }
-
-      return { success: true, data: memory };
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'MEMORY_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Failed to initialize WebAssembly memory',
-        },
-      };
-    }
+    return {
+      success: true,
+      data: wasmMemory,
+    };
   } catch (error) {
     return {
       success: false,
       error: {
         code: 'MEMORY_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to initialize WebAssembly memory',
+        message: error instanceof Error ? error.message : 'Memory initialization failed',
       },
     };
   }
 }
 
 /**
- * Loads the appropriate WASM module based on environment and options
+ * Loads and initializes the appropriate WASM module based on the environment.
+ * This will attempt to load the Node.js optimized module if specified, falling back
+ * to the core module if needed.
+ *
+ * @param options - Module loading options
+ * @returns A promise that resolves to the loaded WASM module
+ * @throws If module loading fails or WASM is not supported
+ *
+ * @example
+ * ```typescript
+ * const module = await loadWasmModule({
+ *   useNode: process.env.NODE_ENV === 'production',
+ *   memory: { initialPages: 16 }
+ * });
+ * ```
  */
 export async function loadWasmModule(
   options: WasmLoadOptions = {}
 ): Promise<DIDCommResult<CoreWasmModule | NodeWasmModule>> {
   try {
     const env = detectEnvironment();
-
     if (!env.hasWasm) {
-      return {
-        success: false,
-        error: {
-          code: 'WASM_NOT_SUPPORTED',
-          message: 'WebAssembly is not supported in this environment',
-        },
-      };
+      throw new Error('WebAssembly is not supported in this environment');
     }
 
     // Initialize memory first
     const memoryResult = await initializeMemory(options);
-    if (!memoryResult.success || !memoryResult.data) {
-      return {
-        success: false,
-        error: memoryResult.error || {
-          code: 'MEMORY_ERROR',
-          message: 'Failed to initialize memory',
-        },
-      };
+    if (!memoryResult.success) {
+      throw new Error(memoryResult.error?.message);
     }
 
-    // Try Node.js module first if requested
+    // Try loading Node.js optimized module if requested
     if (options.useNode && env.isNode) {
       try {
-        const nodeModule = (await import(DEFAULT_NODE_WASM_PATH)) as { default: NodeWasmModule };
-        if (nodeModule.default && typeof nodeModule.default.initialize === 'function') {
-          await nodeModule.default.initialize(memoryResult.data);
-          return { success: true, data: nodeModule.default };
-        }
+        const nodeModule = await import('@tap-didcomm/node');
+        await nodeModule.default.initialize(memoryResult.data);
+        return {
+          success: true,
+          data: nodeModule.default,
+        };
       } catch (error) {
-        console.warn('Failed to load Node.js WASM module, falling back to core:', error);
+        console.warn('Failed to load Node.js module, falling back to core:', error);
       }
     }
 
     // Load core module
-    try {
-      const coreModule = (await import(DEFAULT_CORE_WASM_PATH)) as { default: CoreWasmModule };
-      if (coreModule.default && typeof coreModule.default.initialize === 'function') {
-        await coreModule.default.initialize(memoryResult.data);
-        return { success: true, data: coreModule.default };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          code: 'WASM_LOAD_ERROR',
-          message: error instanceof Error ? error.message : 'Failed to load WASM module',
-        },
-      };
-    }
-
+    const coreModule = await import('@tap-didcomm/core');
+    await coreModule.default.initialize(memoryResult.data);
     return {
-      success: false,
-      error: {
-        code: 'WASM_INIT_ERROR',
-        message: 'Failed to initialize WASM module',
-      },
+      success: true,
+      data: coreModule.default,
     };
   } catch (error) {
     return {
       success: false,
       error: {
-        code: 'WASM_ERROR',
-        message: error instanceof Error ? error.message : 'Unknown error loading WASM module',
+        code: 'MODULE_LOAD_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to load WASM module',
       },
     };
   }

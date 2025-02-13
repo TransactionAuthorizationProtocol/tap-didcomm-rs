@@ -1,136 +1,144 @@
 /**
  * Core types for the DIDComm TypeScript implementation.
- * @module
+ * @module types
  */
 
 /**
- * Supported packing algorithms for DIDComm messages.
+ * Supported packing types for DIDComm messages.
+ * These determine the level of security and privacy applied to messages.
  */
 export enum PackingType {
-  /** No encryption, just signing */
+  /** Messages are only signed, providing authenticity but no encryption */
   SIGNED = 'signed',
-  /** Anonymous encryption */
+  /** Messages are encrypted anonymously, hiding the sender's identity */
   ANONCRYPT = 'anoncrypt',
-  /** Authenticated encryption */
+  /** Messages are encrypted with sender authentication, providing both confidentiality and authenticity */
   AUTHCRYPT = 'authcrypt',
 }
 
 /**
- * A DID Document as defined in the DID Core specification.
+ * Represents a DID Document as defined in the DID Core specification.
+ * @see {@link https://www.w3.org/TR/did-core/}
  */
 export interface DIDDocument {
   /** The DID that identifies this DID Document */
   id: string;
-  /** The verification methods associated with this DID */
+  /** Array of verification methods that can be used to authenticate or authorize interactions */
   verificationMethod?: VerificationMethod[];
-  /** Authentication verification methods */
+  /** Array of verification method references that can be used for authentication */
   authentication?: string[];
-  /** Key agreement verification methods */
+  /** Array of verification method references that can be used for key agreement */
   keyAgreement?: string[];
-  /** Assertion method verification methods */
+  /** Array of verification method references that can be used for making assertions */
   assertionMethod?: string[];
-  /** Service endpoints */
+  /** Array of service endpoints associated with this DID */
   service?: ServiceEndpoint[];
 }
 
 /**
- * A verification method in a DID Document.
+ * Represents a verification method in a DID Document.
+ * This can be a public key or other verification material.
  */
 export interface VerificationMethod {
-  /** The ID of this verification method */
+  /** Unique identifier for this verification method */
   id: string;
-  /** The type of the verification method */
+  /** The type of verification method (e.g., 'Ed25519VerificationKey2020') */
   type: string;
-  /** The controller of this verification method */
+  /** The DID of the controller of this verification method */
   controller: string;
-  /** The public key material */
+  /** Optional JWK representation of the public key */
   publicKeyJwk?: JsonWebKey;
-  /** Multibase-encoded public key */
+  /** Optional multibase-encoded public key */
   publicKeyMultibase?: string;
 }
 
 /**
- * A service endpoint in a DID Document.
+ * Represents a service endpoint in a DID Document.
+ * Services are used for discovering ways to interact with the DID subject.
  */
 export interface ServiceEndpoint {
-  /** The ID of this service */
+  /** Unique identifier for this service */
   id: string;
-  /** The type of service */
+  /** The type of service (e.g., 'DIDCommMessaging') */
   type: string;
-  /** The endpoint URL */
+  /** The URL or other address for accessing the service */
   serviceEndpoint: string;
-  /** Optional routing keys */
+  /** Optional array of routing keys for the service */
   routingKeys?: string[];
-  /** Optional acceptance criteria */
+  /** Optional array of accepted message types */
   accept?: string[];
 }
 
 /**
- * A DIDComm message.
+ * Represents a DIDComm message.
+ * This is the core message format used for all DIDComm communications.
  */
 export interface Message {
-  /** The unique ID of this message */
+  /** Unique identifier for this message */
   id: string;
-  /** The type of this message */
+  /** The protocol and message type (e.g., 'https://didcomm.org/basicmessage/2.0/message') */
   type: string;
-  /** The message body */
+  /** The message content/payload */
   body: Record<string, unknown>;
-  /** The sender's DID */
+  /** The sender's DID (optional for anonymous messages) */
   from?: string;
-  /** The recipient DIDs */
+  /** Array of recipient DIDs */
   to?: string[];
-  /** When the message was created */
+  /** Unix timestamp when the message was created */
   created_time?: number;
-  /** When the message expires */
+  /** Unix timestamp when the message expires */
   expires_time?: number;
-  /** Message attachments */
+  /** Optional array of attachments */
   attachments?: Attachment[];
 }
 
 /**
- * A message attachment.
+ * Represents an attachment to a DIDComm message.
+ * Attachments can contain various types of data in different formats.
  */
 export interface Attachment {
-  /** The ID of this attachment */
+  /** Unique identifier for this attachment */
   id: string;
-  /** The MIME type of the attachment */
+  /** Optional MIME type of the attachment content */
   media_type?: string;
-  /** The attachment data */
+  /** The actual attachment data */
   data: AttachmentData;
 }
 
 /**
- * Attachment data formats.
+ * Represents the data of an attachment in various formats.
+ * This allows for flexible handling of different types of attachment content.
  */
 export interface AttachmentData {
   /** JSON data */
   json?: unknown;
-  /** Base64-encoded data */
+  /** Base64-encoded binary data */
   base64?: string;
-  /** External link */
+  /** Array of URLs pointing to the data */
   links?: string[];
-  /** JWS data */
+  /** JWS data for signed attachments */
   jws?: string;
-  /** Hash of the data */
+  /** Hash of the data for integrity verification */
   hash?: string;
 }
 
 /**
- * Configuration for DIDComm operations.
+ * Configuration options for the DIDComm client.
  */
 export interface DIDCommConfig {
-  /** Default packing type to use */
+  /** The default packing type to use when not specified in operations */
   defaultPacking: PackingType;
-  /** Maximum message size in bytes */
+  /** Maximum allowed message size in bytes */
   maxMessageSize?: number;
   /** Whether to use HTTPS for transport */
   useHttps?: boolean;
-  /** Custom HTTP headers */
+  /** Custom HTTP headers to include in requests */
   headers?: Record<string, string>;
 }
 
 /**
- * Result of a DIDComm operation.
+ * Generic result type for DIDComm operations.
+ * Provides a consistent way to handle both successful and failed operations.
  */
 export interface DIDCommResult<T> {
   /** Whether the operation was successful */
@@ -139,20 +147,20 @@ export interface DIDCommResult<T> {
   data?: T;
   /** Error information if unsuccessful */
   error?: {
-    /** Error code */
+    /** Error code for programmatic handling */
     code: string;
-    /** Error message */
+    /** Human-readable error message */
     message: string;
   };
 }
 
 /**
- * Options for encrypting a message.
+ * Options for encrypting a DIDComm message.
  */
 export interface EncryptOptions {
-  /** The recipient DIDs */
+  /** Array of recipient DIDs */
   to: string[];
-  /** The sender DID (for authcrypt) */
+  /** The sender's DID (required for authenticated encryption) */
   from?: string;
   /** The packing algorithm to use */
   packing?: PackingType;
@@ -161,17 +169,17 @@ export interface EncryptOptions {
 }
 
 /**
- * Options for signing a message.
+ * Options for signing a DIDComm message.
  */
 export interface SignOptions {
   /** The signer's DID */
   from: string;
-  /** Whether to protect the sender's identity */
+  /** Whether to protect the sender's identity in the signature */
   protectSenderIdentity?: boolean;
 }
 
 /**
- * Options for decrypting a message.
+ * Options for decrypting a DIDComm message.
  */
 export interface DecryptOptions {
   /** The recipient's DID to decrypt for */

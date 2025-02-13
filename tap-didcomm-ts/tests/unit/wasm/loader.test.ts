@@ -6,30 +6,31 @@ import type { CoreWasmModule, NodeWasmModule } from '../../../src/wasm/types';
 const mockMemory = new WebAssembly.Memory({ initial: 1, maximum: 2 });
 
 // Mock WASM modules
-vi.mock('@tap-didcomm/core', () => ({
-  default: {
-    memory: mockMemory,
-    initialize: vi.fn().mockResolvedValue(undefined),
-    encrypt: vi.fn().mockResolvedValue('encrypted'),
-    decrypt: vi.fn().mockResolvedValue('decrypted'),
-    sign: vi.fn().mockResolvedValue('signed'),
-    verify: vi.fn().mockResolvedValue(true),
-  } satisfies CoreWasmModule,
-}));
+vi.mock('@tap-didcomm/core', () => {
+  return {
+    default: {
+      memory: new WebAssembly.Memory({ initial: 1 }),
+      initialize: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+});
 
-vi.mock('@tap-didcomm/node', () => ({
-  default: {
-    memory: mockMemory,
-    initialize: vi.fn().mockResolvedValue(undefined),
-    encrypt: vi.fn().mockResolvedValue('encrypted'),
-    decrypt: vi.fn().mockResolvedValue('decrypted'),
-    sign: vi.fn().mockResolvedValue('signed'),
-    verify: vi.fn().mockResolvedValue(true),
-    resolveIdentifier: vi.fn().mockResolvedValue('{}'),
-  } satisfies NodeWasmModule,
-}));
+vi.mock('@tap-didcomm/node', () => {
+  return {
+    default: {
+      memory: new WebAssembly.Memory({ initial: 1 }),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      resolveIdentifier: vi.fn(),
+    },
+  };
+});
 
 describe('WASM Loader', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
   describe('Environment Detection', () => {
     it('should detect Node.js environment', () => {
       const env = detectEnvironment();
@@ -47,9 +48,20 @@ describe('WASM Loader', () => {
       const env = detectEnvironment();
       expect(env.hasSharedArrayBuffer).toBe(true);
     });
+
+    it('should handle missing WebAssembly features gracefully', () => {
+      const originalWebAssembly = global.WebAssembly;
+      // @ts-ignore
+      global.WebAssembly = undefined;
+
+      const env = detectEnvironment();
+      expect(env.hasWasm).toBe(false);
+
+      global.WebAssembly = originalWebAssembly;
+    });
   });
 
-  describe('Memory Initialization', () => {
+  describe('Memory Management', () => {
     it('should initialize memory with default settings', async () => {
       const result = await initializeMemory();
       expect(result.success).toBe(true);
@@ -75,14 +87,53 @@ describe('WASM Loader', () => {
         },
       });
       expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
+      expect(result.error?.code).toBe('MEMORY_ERROR');
+    });
+
+    it('should enforce memory growth limits', async () => {
+      const result = await initializeMemory({
+        memory: {
+          initialPages: 1,
+          maximumPages: 2,
+        },
+      });
+      expect(result.success).toBe(true);
+      if (result.success && result.data) {
+        const memory = result.data;
+        memory.grow(1); // Should succeed
+        expect(() => memory.grow(1)).toThrow(); // Should fail
+      }
+    });
+
+    it('should handle invalid memory configuration', async () => {
+      const result = await initializeMemory({
+        memory: {
+          initialPages: -1, // Invalid
+          maximumPages: 1,
+        },
+      });
+      expect(result.success).toBe(false);
       expect(result.error?.code).toBe('MEMORY_ERROR');
     });
   });
 
   describe('Module Loading', () => {
     beforeEach(() => {
+      vi.resetModules();
       vi.clearAllMocks();
+      vi.doMock('@tap-didcomm/core', () => ({
+        default: {
+          memory: new WebAssembly.Memory({ initial: 1 }),
+          initialize: vi.fn().mockResolvedValue(undefined),
+        },
+      }));
+      vi.doMock('@tap-didcomm/node', () => ({
+        default: {
+          memory: new WebAssembly.Memory({ initial: 1 }),
+          initialize: vi.fn().mockResolvedValue(undefined),
+          resolveIdentifier: vi.fn(),
+        },
+      }));
     });
 
     it('should load WASM module with default options', async () => {
@@ -104,50 +155,75 @@ describe('WASM Loader', () => {
       }
     });
 
-    it('should handle loading errors', async () => {
-      // Mock WebAssembly to be undefined
-      const originalWebAssembly = global.WebAssembly;
-      // @ts-ignore
-      global.WebAssembly = undefined;
+    it('should handle module import failures', async () => {
+      vi.doMock('@tap-didcomm/core', () => {
+        throw new Error('Module not found');
+      });
 
       const result = await loadWasmModule();
       expect(result.success).toBe(false);
-      expect(result.error?.code).toBe('WASM_NOT_SUPPORTED');
+      expect(result.error?.code).toBe('MODULE_LOAD_ERROR');
+    });
 
-      global.WebAssembly = originalWebAssembly;
+    it('should handle memory initialization failures during module load', async () => {
+      vi.doMock('@tap-didcomm/core', () => ({
+        default: {
+          memory: null,
+          initialize: () => {
+            throw new Error('Memory initialization failed');
+          },
+        },
+      }));
+
+      const result = await loadWasmModule();
+      expect(result.success).toBe(false);
+      expect(result.error?.code).toBe('INITIALIZATION_ERROR');
     });
   });
 
-  describe('Memory Management', () => {
-    it('should handle memory growth', async () => {
-      const result = await initializeMemory({
+  describe('Error Recovery', () => {
+    beforeEach(() => {
+      vi.resetModules();
+      vi.clearAllMocks();
+    });
+
+    it('should allow module reload after failure', async () => {
+      // First load fails
+      vi.doMock('@tap-didcomm/core', () => {
+        throw new Error('Module not found');
+      });
+      let result = await loadWasmModule();
+      expect(result.success).toBe(false);
+
+      // Second load succeeds
+      vi.doMock('@tap-didcomm/core', () => ({
+        default: {
+          memory: new WebAssembly.Memory({ initial: 1 }),
+          initialize: vi.fn().mockResolvedValue(undefined),
+        },
+      }));
+      result = await loadWasmModule();
+      expect(result.success).toBe(true);
+    });
+
+    it('should recover from memory allocation failures', async () => {
+      // First allocation fails
+      let result = await initializeMemory({
+        memory: {
+          initialPages: 100000,
+          maximumPages: 200000,
+        },
+      });
+      expect(result.success).toBe(false);
+
+      // Second allocation succeeds
+      result = await initializeMemory({
         memory: {
           initialPages: 1,
           maximumPages: 2,
         },
       });
       expect(result.success).toBe(true);
-      if (result.success && result.data) {
-        const memory = result.data;
-        const initialPages = memory.buffer.byteLength / 65536;
-        memory.grow(1);
-        const newPages = memory.buffer.byteLength / 65536;
-        expect(newPages).toBe(initialPages + 1);
-      }
-    });
-
-    it('should enforce memory limits', async () => {
-      const result = await initializeMemory({
-        memory: {
-          initialPages: 1,
-          maximumPages: 1, // Set maximum to current size
-        },
-      });
-      expect(result.success).toBe(true);
-      if (result.success && result.data) {
-        const memory = result.data;
-        expect(() => memory.grow(1)).toThrow();
-      }
     });
   });
 });

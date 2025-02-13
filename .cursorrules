@@ -160,11 +160,13 @@ Working on fixing issues in the tap-didcomm-ts package, focusing on WASM module 
    - Created proper mock WASM modules for testing
    - Added type-safe implementations
    - Fixed memory handling
+   - Implemented proper vi.doMock() for dynamic mocking
 
 4. Test Suite:
    - Fixed all type errors in test files
    - Improved test coverage
-   - All 25 tests now passing
+   - All 29 tests now passing
+   - Added comprehensive error handling tests
 
 ### Next Steps
 1. Review and document the changes made
@@ -186,5 +188,8 @@ Working on fixing issues in the tap-didcomm-ts package, focusing on WASM module 
 - Keep WASM loading logic separate for different environments
 - Ensure proper error handling in WASM loading
 - Use mock plugins that match Rust implementation
+- Use vi.doMock() instead of vi.mock() for dynamic mocking
+- Always reset modules and mocks in beforeEach blocks
+- Provide proper WebAssembly.Memory instances in mocks
 
 

@@ -1,24 +1,26 @@
 # TAP DIDComm TypeScript
 
-TypeScript wrapper for the TAP DIDComm implementation with WASM support. This package provides a high-level API for DIDComm v2 operations in both Node.js and browser environments.
+A TypeScript implementation of the DIDComm v2 protocol with WASM support.
 
 ## Features
 
-- Full DIDComm v2 support
-- Cross-platform (Node.js and browser)
-- WebAssembly-powered cryptographic operations
-- Pluggable architecture for DID resolution, signing, and encryption
-- TypeScript types and documentation
-- Comprehensive test suite
-- Memory-efficient WASM loading
+- 🔒 **Secure Messaging**: Full support for DIDComm v2 encrypted messaging
+- 🌐 **Cross-Platform**: Works in both Node.js and browser environments
+- ⚡ **WASM-Powered**: High-performance cryptographic operations using WebAssembly
+- 🔌 **Plugin System**: Extensible architecture for custom DID resolution and cryptographic operations
+- 📦 **Modern Package**: Built with TypeScript, offering full type safety
+- 🧪 **Well-Tested**: Comprehensive test suite covering both Node.js and browser environments
 
 ## Installation
 
 ```bash
-npm install tap-didcomm-ts
-# or
+# Using pnpm (recommended)
 pnpm add tap-didcomm-ts
-# or
+
+# Using npm
+npm install tap-didcomm-ts
+
+# Using yarn
 yarn add tap-didcomm-ts
 ```
 
@@ -28,44 +30,77 @@ yarn add tap-didcomm-ts
 import { DIDCommClient, DefaultDIDCommPlugin, PackingType } from 'tap-didcomm-ts';
 
 async function main() {
-  // Create a client with default configuration
-  const client = new DIDCommClient({
-    defaultPacking: PackingType.ANONCRYPT,
-    useHttps: true
-  }, new DefaultDIDCommPlugin());
+  // Initialize the client
+  const client = new DIDCommClient(
+    {
+      defaultPacking: PackingType.ANONCRYPT,
+      useHttps: true,
+    },
+    new DefaultDIDCommPlugin()
+  );
 
-  // Initialize WASM module
+  // Initialize WASM (required before any operations)
   await client.initialize();
 
   // Create a message
   const message = {
-    id: 'example-1',
+    id: `msg-${Date.now()}`,
     type: 'example/1.0',
-    body: { hello: 'world' }
+    body: { text: 'Hello, DIDComm!' },
   };
 
-  // Encrypt message
+  // Encrypt the message
   const encrypted = await client.encrypt(message, {
     to: ['did:example:recipient'],
-    from: 'did:example:sender'
+    from: 'did:example:sender',
+    packing: PackingType.AUTHCRYPT,
   });
 
-  // Decrypt message
-  const decrypted = await client.decrypt(encrypted.data, {
-    recipient: 'did:example:recipient'
+  // Decrypt the message
+  const decrypted = await client.decrypt(encrypted.data!, {
+    recipient: 'did:example:recipient',
   });
 
-  console.log(decrypted.data);
+  console.log('Decrypted message:', decrypted.data);
 }
 
 main().catch(console.error);
+```
+
+## Architecture
+
+The package is structured into several key components:
+
+- **Core Client**: The main `DIDCommClient` class handling message operations
+- **Plugin System**: Interfaces for DID resolution, signing, and encryption
+- **WASM Integration**: WebAssembly modules for cryptographic operations
+- **Types**: Comprehensive TypeScript type definitions
+
+### Plugin System
+
+The package uses a plugin-based architecture for extensibility:
+
+```typescript
+interface DIDCommPlugin {
+  readonly resolver: DIDResolver;
+  readonly signer: Signer;
+  readonly encryptor: Encryptor;
+}
+```
+
+You can implement custom plugins by implementing these interfaces:
+
+```typescript
+class CustomPlugin implements DIDCommPlugin {
+  // Implement resolver, signer, and encryptor
+}
 ```
 
 ## API Reference
 
 ### DIDCommClient
 
-The main client for DIDComm operations.
+The main client class for DIDComm operations.
 
 ```typescript
 class DIDCommClient {
@@ -79,77 +114,73 @@ class DIDCommClient {
 }
 ```
 
-### Plugin System
-
-The package uses a plugin system for extensibility:
+### Message Types
 
 ```typescript
-interface DIDCommPlugin {
-  readonly resolver: DIDResolver;
-  readonly signer: Signer;
-  readonly encryptor: Encryptor;
+interface Message {
+  id: string;
+  type: string;
+  body: Record<string, unknown>;
+  from?: string;
+  to?: string[];
+  created_time?: number;
+  expires_time?: number;
+  attachments?: Attachment[];
 }
+```
 
-interface DIDResolver {
-  resolve(did: string): Promise<DIDCommResult<DIDDocument>>;
-}
+### Configuration
 
-interface Signer {
-  sign(data: Uint8Array, keyId: string): Promise<DIDCommResult<Uint8Array>>;
-  verify(data: Uint8Array, signature: Uint8Array, keyId: string): Promise<DIDCommResult<boolean>>;
-}
-
-interface Encryptor {
-  encrypt(data: Uint8Array, recipientKeys: string[], senderKey?: string): Promise<DIDCommResult<Uint8Array>>;
-  decrypt(data: Uint8Array, recipientKey: string): Promise<DIDCommResult<Uint8Array>>;
+```typescript
+interface DIDCommConfig {
+  defaultPacking: PackingType;
+  maxMessageSize?: number;
+  useHttps?: boolean;
+  headers?: Record<string, string>;
 }
 ```
 
 ## Browser Support
 
-The package supports modern browsers through WASM. For optimal performance, the WASM module is loaded dynamically:
+The package supports all modern browsers with WebAssembly capabilities:
 
-```typescript
-import { DIDCommClient, detectEnvironment } from 'tap-didcomm-ts';
+- Chrome/Edge (v79+)
+- Firefox (v72+)
+- Safari (v13.1+)
+- Node.js (v18+)
 
-const env = detectEnvironment();
-const client = new DIDCommClient({
-  wasmUrl: env.isBrowser ? '/path/to/didcomm_core.wasm' : undefined
-});
+## Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build WASM modules
+pnpm run build:wasm
+
+# Build TypeScript
+pnpm run build
+
+# Run tests
+pnpm test          # Unit tests
+pnpm test:browser  # Browser tests
+pnpm test:coverage # Coverage report
 ```
-
-## Node.js Support
-
-In Node.js environments, the package automatically uses Node-optimized WASM bindings:
-
-```typescript
-import { DIDCommClient } from 'tap-didcomm-ts';
-
-const client = new DIDCommClient({
-  useNode: true // Enable Node.js optimizations
-});
-```
-
-## Security Considerations
-
-- The package uses WebAssembly for cryptographic operations
-- All cryptographic material is zeroized after use
-- Memory is managed efficiently to prevent leaks
-- Input validation is performed on all messages
-- Error handling preserves security properties
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Security
+
+This package implements the DIDComm v2 specification with a focus on security. However, it should be noted that:
+
+- The implementation is currently in beta
+- A security audit is pending
+- Use in production systems should be carefully evaluated
+
+Please report security issues via our [security policy](SECURITY.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for a list of changes. 
+MIT License - see [LICENSE](LICENSE) for details. 
