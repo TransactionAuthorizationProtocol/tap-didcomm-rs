@@ -1,34 +1,16 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from 'vitest/config';
+import { resolve } from 'path';
 
 export default defineConfig({
   test: {
-    globals: true,
-    environment: "node", // Default to Node.js environment
-    include: ["tests/unit/**/*.test.ts"],
-    exclude: ["tests/browser/**/*"],
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "html", "lcov"],
-      exclude: [
-        "node_modules/**",
-        "dist/**",
-        "dist-examples/**",
-        "coverage/**",
-        "**/*.d.ts",
-        "tests/**",
-        "examples/**",
-      ],
-    },
-    setupFiles: ["tests/node/setup.ts"],
-    isolate: true,
-    threads: false,
-    maxConcurrency: 1,
-    maxThreads: 1,
-    minThreads: 1,
+    environment: 'node',
+    include: ['tests/unit/**/*.test.ts'],
+    exclude: ['tests/browser/**/*'],
   },
   resolve: {
     alias: {
-      "@": "/src", // Enable @ imports from src directory
+      '@tap-didcomm/core': resolve(__dirname, './pkg/core/tap_didcomm_core.js'),
+      '@tap-didcomm/node': resolve(__dirname, './pkg/node/tap_didcomm_node.js'),
     },
   },
 });

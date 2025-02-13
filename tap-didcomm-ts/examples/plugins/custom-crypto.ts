@@ -1,46 +1,61 @@
-import { Signer, Encryptor, Result, SignedMessage, EncryptedMessage } from '../../dist';
+import type { Signer, Encryptor, DIDCommResult } from '../../src';
+
+interface SignedMessage {
+  signature: string;
+  keyId: string;
+  [key: string]: unknown;
+}
+
+interface EncryptedMessage {
+  ciphertext: string;
+  recipients: string[];
+}
 
 /**
  * Example custom signer that uses a simple key-value store for private keys
  */
 export class CustomSigner implements Signer {
-  private keys: Map<string, string>;
+  private keys: Map<string, Uint8Array>;
 
   constructor() {
     this.keys = new Map();
     // Initialize with some example keys (in a real implementation, these would be secure private keys)
-    this.keys.set('did:example:sender#key-1', 'mock-private-key-1');
-    this.keys.set('did:example:recipient#key-1', 'mock-private-key-2');
+    this.keys.set('did:example:sender#key-1', new Uint8Array([1, 2, 3, 4]));
+    this.keys.set('did:example:recipient#key-1', new Uint8Array([5, 6, 7, 8]));
   }
 
   /**
    * Signs a message using the private key associated with the given key ID
    */
-  async sign(message: any, keyId: string): Promise<Result<SignedMessage>> {
+  async sign(data: Uint8Array, keyId: string): Promise<DIDCommResult<Uint8Array>> {
     try {
       const privateKey = this.keys.get(keyId);
       if (!privateKey) {
         return {
           success: false,
-          error: new Error(`Key not found: ${keyId}`)
+          error: {
+            code: 'KEY_NOT_FOUND',
+            message: `Key not found: ${keyId}`,
+          },
         };
       }
 
-      // In a real implementation, this would use actual cryptographic signing
-      const mockSignature = Buffer.from(`${privateKey}-${JSON.stringify(message)}`).toString('base64');
+      // Mock signature by concatenating data with key
+      const signature = new Uint8Array(data.length + privateKey.length);
+      signature.set(data);
+      signature.set(privateKey, data.length);
 
       return {
         success: true,
-        data: {
-          ...message,
-          signature: mockSignature,
-          keyId
-        }
+        data: signature,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error('Unknown error occurred')
+        error: {
+          code: 'SIGNING_ERROR',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
       };
     }
   }
@@ -48,30 +63,39 @@ export class CustomSigner implements Signer {
   /**
    * Verifies a signed message
    */
-  async verify(signedMessage: SignedMessage): Promise<Result<boolean>> {
+  async verify(
+    data: Uint8Array,
+    signature: Uint8Array,
+    keyId: string
+  ): Promise<DIDCommResult<boolean>> {
     try {
-      const { signature, keyId, ...message } = signedMessage;
       const privateKey = this.keys.get(keyId);
-
       if (!privateKey) {
         return {
           success: false,
-          error: new Error(`Key not found: ${keyId}`)
+          error: {
+            code: 'KEY_NOT_FOUND',
+            message: `Key not found: ${keyId}`,
+          },
         };
       }
 
-      // In a real implementation, this would verify the cryptographic signature
-      const expectedSignature = Buffer.from(`${privateKey}-${JSON.stringify(message)}`).toString('base64');
-      const isValid = signature === expectedSignature;
+      // Mock verification by checking if signature ends with key
+      const expectedSignature = new Uint8Array(data.length + privateKey.length);
+      expectedSignature.set(data);
+      expectedSignature.set(privateKey, data.length);
 
       return {
         success: true,
-        data: isValid
+        data: signature.every((byte, i) => byte === expectedSignature[i]),
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error('Unknown error occurred')
+        error: {
+          code: 'VERIFICATION_ERROR',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
       };
     }
   }
@@ -88,47 +112,55 @@ export class CustomSigner implements Signer {
  * Example custom encryptor that uses a simple mock encryption scheme
  */
 export class CustomEncryptor implements Encryptor {
-  private keys: Map<string, string>;
+  private keys: Map<string, Uint8Array>;
 
   constructor() {
     this.keys = new Map();
     // Initialize with some example keys (in a real implementation, these would be secure encryption keys)
-    this.keys.set('did:example:sender#key-2', 'mock-encryption-key-1');
-    this.keys.set('did:example:recipient#key-2', 'mock-encryption-key-2');
+    this.keys.set('did:example:sender#key-2', new Uint8Array([9, 10, 11, 12]));
+    this.keys.set('did:example:recipient#key-2', new Uint8Array([13, 14, 15, 16]));
   }
 
   /**
    * Encrypts a message for the specified recipients
    */
-  async encrypt(message: any, recipientKeys: string[]): Promise<Result<EncryptedMessage>> {
+  async encrypt(
+    data: Uint8Array,
+    recipientKeys: string[],
+    senderKey?: string
+  ): Promise<DIDCommResult<Uint8Array>> {
     try {
       // Verify we have all recipient keys
       for (const keyId of recipientKeys) {
         if (!this.keys.has(keyId)) {
           return {
             success: false,
-            error: new Error(`Key not found: ${keyId}`)
+            error: {
+              code: 'KEY_NOT_FOUND',
+              message: `Key not found: ${keyId}`,
+            },
           };
         }
       }
 
-      // In a real implementation, this would use proper encryption
-      const mockCiphertext = Buffer.from(JSON.stringify({
-        message,
-        recipients: recipientKeys
-      })).toString('base64');
+      // Mock encryption by XORing with a fixed key
+      const mockKey = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
+      const encrypted = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        encrypted[i] = data[i] ^ mockKey[i % mockKey.length];
+      }
 
       return {
         success: true,
-        data: {
-          ciphertext: mockCiphertext,
-          recipients: recipientKeys
-        }
+        data: encrypted,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error('Unknown error occurred')
+        error: {
+          code: 'ENCRYPTION_ERROR',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
       };
     }
   }
@@ -136,32 +168,36 @@ export class CustomEncryptor implements Encryptor {
   /**
    * Decrypts a message using the specified recipient key
    */
-  async decrypt(encryptedMessage: EncryptedMessage, recipientKey: string): Promise<Result<any>> {
+  async decrypt(data: Uint8Array, recipientKey: string): Promise<DIDCommResult<Uint8Array>> {
     try {
       if (!this.keys.has(recipientKey)) {
         return {
           success: false,
-          error: new Error(`Key not found: ${recipientKey}`)
+          error: {
+            code: 'KEY_NOT_FOUND',
+            message: `Key not found: ${recipientKey}`,
+          },
         };
       }
 
-      if (!encryptedMessage.recipients.includes(recipientKey)) {
-        return {
-          success: false,
-          error: new Error(`Message not encrypted for key: ${recipientKey}`)
-        };
+      // Mock decryption by XORing with the same fixed key
+      const mockKey = new Uint8Array([0xff, 0xff, 0xff, 0xff]);
+      const decrypted = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        decrypted[i] = data[i] ^ mockKey[i % mockKey.length];
       }
 
-      // In a real implementation, this would use proper decryption
-      const decoded = JSON.parse(Buffer.from(encryptedMessage.ciphertext, 'base64').toString());
       return {
         success: true,
-        data: decoded.message
+        data: decrypted,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error : new Error('Unknown error occurred')
+        error: {
+          code: 'DECRYPTION_ERROR',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
       };
     }
   }
@@ -182,25 +218,18 @@ async function example() {
   const encryptor = new CustomEncryptor();
 
   // Test message
-  const message = {
-    id: `test-${Date.now()}`,
-    type: 'example/1.0',
-    body: {
-      text: 'Hello from custom plugins!',
-      timestamp: Date.now()
-    }
-  };
+  const message = new TextEncoder().encode('Hello from custom plugins!');
 
   // Test signing
   console.log('Testing signing...');
   const signResult = await signer.sign(message, 'did:example:sender#key-1');
-  if (signResult.success) {
+  if (signResult.success && signResult.data) {
     console.log('Successfully signed message:');
-    console.log(JSON.stringify(signResult.data, null, 2));
+    console.log('Signature:', Buffer.from(signResult.data).toString('base64'));
 
     // Test verification
     console.log('\nVerifying signature...');
-    const verifyResult = await signer.verify(signResult.data);
+    const verifyResult = await signer.verify(message, signResult.data, 'did:example:sender#key-1');
     if (verifyResult.success) {
       console.log('Signature verification:', verifyResult.data ? 'Valid' : 'Invalid');
     }
@@ -208,12 +237,10 @@ async function example() {
 
   // Test encryption
   console.log('\nTesting encryption...');
-  const encryptResult = await encryptor.encrypt(message, [
-    'did:example:recipient#key-2'
-  ]);
-  if (encryptResult.success) {
+  const encryptResult = await encryptor.encrypt(message, ['did:example:recipient#key-2']);
+  if (encryptResult.success && encryptResult.data) {
     console.log('Successfully encrypted message:');
-    console.log(JSON.stringify(encryptResult.data, null, 2));
+    console.log('Encrypted:', Buffer.from(encryptResult.data).toString('base64'));
 
     // Test decryption
     console.log('\nDecrypting message...');
@@ -221,13 +248,14 @@ async function example() {
       encryptResult.data,
       'did:example:recipient#key-2'
     );
-    if (decryptResult.success) {
+    if (decryptResult.success && decryptResult.data) {
       console.log('Successfully decrypted message:');
-      console.log(JSON.stringify(decryptResult.data, null, 2));
+      console.log('Decrypted:', new TextDecoder().decode(decryptResult.data));
     }
   }
 }
 
 // Run the example if this file is executed directly
 if (require.main === module) {
-  example().catch(console.error); 
+  example().catch(console.error);
+}

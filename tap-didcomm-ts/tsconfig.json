@@ -13,7 +13,9 @@
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@tap-didcomm/core": ["pkg/core/tap_didcomm_core.js"],
+      "@tap-didcomm/node": ["pkg/node/tap_didcomm_node.js"]
     },
     "esModuleInterop": true,
     "skipLibCheck": true,

@@ -28,7 +28,12 @@ pub trait Signer: Send + Sync {
 #[async_trait]
 pub trait Encryptor: Send + Sync {
     /// Encrypts a message for the specified recipients.
-    async fn encrypt(&self, message: &[u8], to: Vec<String>, from: Option<String>) -> Result<Vec<u8>>;
+    async fn encrypt(
+        &self,
+        message: &[u8],
+        to: Vec<String>,
+        from: Option<String>,
+    ) -> Result<Vec<u8>>;
 
     /// Decrypts a message using the recipient's key.
     async fn decrypt(&self, message: &[u8], recipient: String) -> Result<Vec<u8>>;
@@ -38,17 +43,26 @@ pub trait Encryptor: Send + Sync {
 #[async_trait]
 pub trait DIDCommPlugin: DIDResolver + Signer + Encryptor + Send + Sync {
     /// Gets the resolver implementation.
-    fn as_resolver(&self) -> &dyn DIDResolver where Self: Sized {
+    fn as_resolver(&self) -> &dyn DIDResolver
+    where
+        Self: Sized,
+    {
         self
     }
 
     /// Gets the signer implementation.
-    fn as_signer(&self) -> &dyn Signer where Self: Sized {
+    fn as_signer(&self) -> &dyn Signer
+    where
+        Self: Sized,
+    {
         self
     }
 
     /// Gets the encryptor implementation.
-    fn as_encryptor(&self) -> &dyn Encryptor where Self: Sized {
+    fn as_encryptor(&self) -> &dyn Encryptor
+    where
+        Self: Sized,
+    {
         self
     }
 }
@@ -96,7 +110,11 @@ mod tests {
 
         plugin
             .expect_verify()
-            .with(eq(test_message.as_ref()), eq(test_signature.as_ref()), eq(test_key))
+            .with(
+                eq(test_message.as_ref()),
+                eq(test_signature.as_ref()),
+                eq(test_key),
+            )
             .returning(|_, _, _| Ok(true));
 
         let signature = plugin.sign(test_message, test_key).await.unwrap();

@@ -8,11 +8,11 @@
  */
 export enum PackingType {
   /** No encryption, just signing */
-  SIGNED = "signed",
+  SIGNED = 'signed',
   /** Anonymous encryption */
-  ANONCRYPT = "anoncrypt",
+  ANONCRYPT = 'anoncrypt',
   /** Authenticated encryption */
-  AUTHCRYPT = "authcrypt",
+  AUTHCRYPT = 'authcrypt',
 }
 
 /**
@@ -27,6 +27,8 @@ export interface DIDDocument {
   authentication?: string[];
   /** Key agreement verification methods */
   keyAgreement?: string[];
+  /** Assertion method verification methods */
+  assertionMethod?: string[];
   /** Service endpoints */
   service?: ServiceEndpoint[];
 }

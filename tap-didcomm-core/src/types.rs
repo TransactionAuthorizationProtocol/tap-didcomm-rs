@@ -52,25 +52,25 @@ impl MessageId {
 pub struct Message {
     /// The unique identifier for this message
     pub id: MessageId,
-    
+
     /// The message type that defines the protocol and message purpose
     pub typ: MessageType,
-    
+
     /// The DID of the sender (optional for anonymous messages)
     pub from: Option<String>,
-    
+
     /// The DIDs of the recipients
     pub to: Option<Vec<String>>,
-    
+
     /// Unix timestamp when the message was created
     pub created_time: u64,
-    
+
     /// Unix timestamp when the message expires (optional)
     pub expires_time: Option<u64>,
-    
+
     /// The actual content/payload of the message
     pub body: serde_json::Value,
-    
+
     /// Optional attachments to the message
     pub attachments: Option<Vec<Attachment>>,
 }
@@ -140,19 +140,19 @@ impl Message {
 pub struct Attachment {
     /// Unique identifier for the attachment
     pub id: String,
-    
+
     /// Optional human-readable description
     pub description: Option<String>,
-    
+
     /// Optional filename for the attachment
     pub filename: Option<String>,
-    
+
     /// Optional MIME type of the attachment
     pub media_type: Option<String>,
-    
+
     /// Optional format identifier
     pub format: Option<String>,
-    
+
     /// The actual attachment data
     pub data: AttachmentData,
 }
@@ -165,16 +165,16 @@ pub struct Attachment {
 pub enum AttachmentData {
     /// JWS (JSON Web Signature) data
     Jws(serde_json::Value),
-    
+
     /// Hash of the data for integrity verification
     Hash(serde_json::Value),
-    
+
     /// Links to external resources
     Links(Vec<String>),
-    
+
     /// Base64-encoded binary data
     Base64(String),
-    
+
     /// Direct JSON data
     Json(serde_json::Value),
 }
@@ -188,10 +188,10 @@ pub enum PackingType {
     /// No encryption, just signed
     #[default]
     Signed,
-    
+
     /// Authenticated encryption with sender identity
     AuthcryptV2,
-    
+
     /// Anonymous encryption without sender identity
     AnonV2,
 }
@@ -204,23 +204,23 @@ pub enum PackingType {
 pub struct Header {
     /// The message ID
     pub id: MessageId,
-    
+
     /// The message type
     #[serde(rename = "type")]
     pub typ: MessageType,
-    
+
     /// The sender's DID
     pub from: Option<String>,
-    
+
     /// The recipient's DID
     pub to: Option<Vec<String>>,
-    
+
     /// When the message was created
     pub created_time: Option<u64>,
-    
+
     /// When the message expires
     pub expires_time: Option<u64>,
-    
+
     /// Additional custom headers
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -234,7 +234,7 @@ pub struct Body {
     /// The message content
     #[serde(flatten)]
     pub content: serde_json::Value,
-    
+
     /// Message attachments
     #[serde(default)]
     pub attachments: Vec<Attachment>,
@@ -248,7 +248,7 @@ pub struct Body {
 pub struct PackedMessage {
     /// The packed message data
     pub data: String,
-    
+
     /// The type of packing used
     #[serde(skip)]
     pub packing: PackingType,

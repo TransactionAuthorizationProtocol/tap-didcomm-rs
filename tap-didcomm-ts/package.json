@@ -7,6 +7,16 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "exports": {
+    "./core": {
+      "types": "./pkg/core/tap_didcomm_core.d.ts",
+      "import": "./pkg/core/tap_didcomm_core.js",
+      "require": "./pkg/core/tap_didcomm_core.js"
+    },
+    "./node": {
+      "types": "./pkg/node/tap_didcomm_node.d.ts",
+      "import": "./pkg/node/tap_didcomm_node.js",
+      "require": "./pkg/node/tap_didcomm_node.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
@@ -15,15 +25,17 @@
   },
   "files": [
     "dist",
+    "pkg",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "pnpm run build:wasm && pnpm run build:ts",
+    "build": "pnpm run build:wasm && pnpm run copy:wasm && pnpm run build:ts",
     "build:ts": "tsup",
     "build:wasm": "cd ../tap-didcomm-core && wasm-pack build --target bundler && cd ../tap-didcomm-node && wasm-pack build --target nodejs",
+    "copy:wasm": "node scripts/copy-wasm.js",
     "build:examples": "tsc -p tsconfig.examples.json",
-    "clean": "rimraf dist dist-examples",
+    "clean": "rimraf dist dist-examples pkg",
     "dev": "tsup --watch",
     "format": "prettier --write \"src/**/*.ts\" \"examples/**/*.ts\"",
     "lint": "eslint . --ext .ts --fix",
