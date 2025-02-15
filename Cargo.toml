@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "tap-didcomm-core",
-    "tap-didcomm-node"
+    "tap-didcomm-node",
+    "tap-didcomm-web"
 ]
 
 [workspace.dependencies]
@@ -15,7 +16,7 @@ async-trait = "0.1.77"
 
 # SSI dependencies
 ssi = { version = "0.7.0", default-features = false }
-tokio = { version = "1.36.0", features = ["sync", "macros"] }
+tokio = { version = "1.36.0", features = ["rt", "macros"] }
 
 # Logging
 tracing = "0.1.40"

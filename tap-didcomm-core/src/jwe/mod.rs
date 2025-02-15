@@ -42,13 +42,15 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::str::FromStr;
+use zeroize::Zeroize;
 
-use crate::did::DIDResolver;
+use crate::plugin::DIDResolver;
 use algorithms::*;
 
 pub mod algorithms;
@@ -340,7 +342,7 @@ impl JweMessage {
         // Encode header
         let protected = URL_SAFE_NO_PAD.encode(
             serde_json::to_string(&header)
-                .map_err(|e| JweError::Header(format!("Failed to serialize header: {}", e)))?
+                .map_err(|e| JweError::Header(format!("Failed to serialize header: {}", e)))?,
         );
 
         // Generate content encryption key and IV
@@ -357,12 +359,7 @@ impl JweMessage {
         };
 
         // Derive key encryption key
-        let kek = derive_key(
-            &shared_secret,
-            &[],
-            protected.as_bytes(),
-            32,
-        )?;
+        let kek = derive_key(&shared_secret, &[], protected.as_bytes(), 32)?;
 
         // Wrap content encryption key
         let encrypted_key = wrap_key(&kek, &cek.0)?;
@@ -373,9 +370,7 @@ impl JweMessage {
             ContentEncryptionAlgorithm::A256CbcHs512 => {
                 encrypt_aes_cbc_hmac(&cek.0, &iv.0, aad, plaintext)?
             }
-            ContentEncryptionAlgorithm::A256Gcm => {
-                encrypt_aes_gcm(&cek.0, &iv.0, aad, plaintext)?
-            }
+            ContentEncryptionAlgorithm::A256Gcm => encrypt_aes_gcm(&cek.0, &iv.0, aad, plaintext)?,
             ContentEncryptionAlgorithm::Xc20P => {
                 encrypt_xchacha20poly1305(&cek.0, &iv.0, aad, plaintext)?
             }
@@ -397,38 +392,40 @@ impl JweMessage {
         resolver: &R,
     ) -> Result<Vec<u8>> {
         // Decode protected header
-        let protected_json = URL_SAFE_NO_PAD.decode(&self.protected)
+        let protected_json = URL_SAFE_NO_PAD
+            .decode(&self.protected)
             .map_err(|e| JweError::Base64("Failed to decode protected header", e))?;
-        
+
         let header: JweHeader = serde_json::from_slice(&protected_json)
             .map_err(|e| JweError::Header(format!("Failed to parse header: {}", e)))?;
 
         // Extract ephemeral public key
-        let epk = header.epk.ok_or_else(|| JweError::Header("Missing ephemeral public key".to_string()))?;
+        let epk = header
+            .epk
+            .ok_or_else(|| JweError::Header("Missing ephemeral public key".to_string()))?;
         let sender_public = epk.raw_public_key()?;
 
         // Perform ECDH
         let shared_secret = ecdh_key_agreement(epk.crv, recipient_private_key, &sender_public)?;
 
         // Derive key encryption key
-        let kek = derive_key(
-            &shared_secret,
-            &[],
-            self.protected.as_bytes(),
-            32,
-        )?;
+        let kek = derive_key(&shared_secret, &[], self.protected.as_bytes(), 32)?;
 
         // Unwrap content encryption key
-        let encrypted_key = URL_SAFE_NO_PAD.decode(&self.encrypted_key)
+        let encrypted_key = URL_SAFE_NO_PAD
+            .decode(&self.encrypted_key)
             .map_err(|e| JweError::Base64("Failed to decode encrypted key", e))?;
         let cek = unwrap_key(&kek, &encrypted_key)?;
 
         // Decode IV and ciphertext
-        let iv = URL_SAFE_NO_PAD.decode(&self.iv)
+        let iv = URL_SAFE_NO_PAD
+            .decode(&self.iv)
             .map_err(|e| JweError::Base64("Failed to decode IV", e))?;
-        let ciphertext = URL_SAFE_NO_PAD.decode(&self.ciphertext)
+        let ciphertext = URL_SAFE_NO_PAD
+            .decode(&self.ciphertext)
             .map_err(|e| JweError::Base64("Failed to decode ciphertext", e))?;
-        let tag = URL_SAFE_NO_PAD.decode(&self.tag)
+        let tag = URL_SAFE_NO_PAD
+            .decode(&self.tag)
             .map_err(|e| JweError::Base64("Failed to decode authentication tag", e))?;
 
         // Decrypt content
@@ -447,17 +444,42 @@ impl JweMessage {
     }
 }
 
+/// Resolves a key from a DID Document
+async fn resolve_key<R: DIDResolver>(resolver: &R, did: &str) -> Result<Vec<u8>> {
+    let did_doc = resolver.resolve(did).await?;
+    let doc: Value = serde_json::from_str(&did_doc)?;
+
+    // Extract verification method from DID Document
+    let vm = doc["verificationMethod"]
+        .as_array()
+        .ok_or_else(|| JweError::InvalidDIDDocument("No verification methods found".into()))?
+        .first()
+        .ok_or_else(|| JweError::InvalidDIDDocument("Empty verification methods".into()))?;
+
+    // Get public key bytes
+    let public_key_base64 = vm["publicKeyBase64"]
+        .as_str()
+        .ok_or_else(|| JweError::InvalidDIDDocument("No publicKeyBase64 found".into()))?;
+
+    URL_SAFE_NO_PAD
+        .decode(public_key_base64)
+        .map_err(|e| JweError::InvalidDIDDocument(format!("Invalid public key encoding: {}", e)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use async_trait::async_trait;
+    use serde_json::json;
 
     #[test]
     fn test_encryption_config_default() {
         let config = EncryptionConfig::default();
         assert_eq!(config.key_agreement, KeyAgreementAlgorithm::EcdhEsA256kw);
-        assert_eq!(config.content_encryption, ContentEncryptionAlgorithm::A256Gcm);
+        assert_eq!(
+            config.content_encryption,
+            ContentEncryptionAlgorithm::A256Gcm
+        );
         assert_eq!(config.curve, EcdhCurve::X25519);
     }
 
@@ -573,7 +595,9 @@ mod tests {
                 &resolver,
                 ContentEncryptionAlgorithm::A256Gcm,
                 curve,
-            ).await.unwrap();
+            )
+            .await
+            .unwrap();
 
             // Decrypt
             let decrypted = jwe.decrypt(&recipient_private, &resolver).await.unwrap();
@@ -599,7 +623,9 @@ mod tests {
             &resolver,
             ContentEncryptionAlgorithm::A256Gcm,
             EcdhCurve::X25519,
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Tamper with ciphertext
         let mut ciphertext = URL_SAFE_NO_PAD.decode(&jwe.ciphertext).unwrap();
@@ -610,4 +636,4 @@ mod tests {
         let result = jwe.decrypt(&recipient_private, &resolver).await;
         assert!(matches!(result, Err(JweError::AuthenticationFailed)));
     }
-} 
+}

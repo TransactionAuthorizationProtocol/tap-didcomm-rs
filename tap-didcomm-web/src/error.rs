@@ -1,7 +1,8 @@
 //! Error types for the tap-didcomm-web crate.
 
-use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use thiserror::Error;
+use warp::http::StatusCode;
+use warp::reject::Reject;
 
 /// Error type for the web server.
 #[derive(Debug, Error)]
@@ -23,15 +24,10 @@ pub enum Error {
     Internal(String),
 }
 
-impl ResponseError for Error {
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code())
-            .json(serde_json::json!({
-                "error": self.to_string()
-            }))
-    }
+impl Reject for Error {}
 
-    fn status_code(&self) -> StatusCode {
+impl Error {
+    pub fn status_code(&self) -> StatusCode {
         match self {
             Error::Serialization(_) => StatusCode::BAD_REQUEST,
             Error::InvalidFormat(_) => StatusCode::BAD_REQUEST,
@@ -42,4 +38,4 @@ impl ResponseError for Error {
 }
 
 /// Result type for the web server.
-pub type Result<T> = std::result::Result<T, Error>; 
+pub type Result<T> = std::result::Result<T, Error>;

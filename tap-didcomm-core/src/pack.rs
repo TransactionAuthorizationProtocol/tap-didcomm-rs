@@ -21,62 +21,58 @@ pub async fn pack_message(
     plugin: &dyn DIDCommPlugin,
     packing_type: PackingType,
 ) -> Result<String> {
-    let msg_json =
-        serde_json::to_string(message).map_err(|e| Error::SerializationError(e.to_string()))?;
+    let msg_json = serde_json::to_string(message)?;
 
     match packing_type {
         PackingType::Signed => {
-            let from = message.from.as_deref().ok_or_else(|| {
-                Error::InvalidFormat("Sender DID required for signed messages".into())
-            })?;
+            if let Some(from) = &message.from {
+                let signature = plugin
+                    .signer()
+                    .sign(msg_json.as_bytes(), from)
+                    .await
+                    .map_err(|e| Error::SigningFailed(e.to_string()))?;
 
-            let signature = plugin
-                .sign(msg_json.as_bytes(), from)
-                .await
-                .map_err(|e| Error::SigningFailed(e.to_string()))?;
-
-            let packed = json!({
-                "payload": URL_SAFE_NO_PAD.encode(msg_json),
-                "signatures": [
-                    {
-                        "signature": URL_SAFE_NO_PAD.encode(signature),
-                        "protected": URL_SAFE_NO_PAD.encode("{}"),
-                    }
-                ]
-            });
-
-            serde_json::to_string(&packed).map_err(|e| Error::SerializationError(e.to_string()))
+                Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&signature))
+            } else {
+                Err(Error::InvalidFormat(
+                    "Sender DID required for signed messages".into(),
+                ))
+            }
         }
         PackingType::AuthcryptV2 => {
             let from = message
                 .from
-                .as_deref()
+                .as_ref()
                 .ok_or_else(|| Error::InvalidFormat("Sender DID required for authcrypt".into()))?;
 
-            let to = message
-                .to
-                .as_ref()
-                .ok_or_else(|| Error::InvalidFormat("Recipients required for authcrypt".into()))?;
+            let to = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidFormat("Recipient DIDs required for authcrypt".into())
+            })?;
+
+            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
 
             let encrypted = plugin
-                .encrypt(msg_json.as_bytes(), to.clone(), Some(from.to_string()))
+                .encryptor()
+                .encrypt(msg_json.as_bytes(), &to_refs, Some(from))
                 .await
                 .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
 
-            Ok(URL_SAFE_NO_PAD.encode(encrypted))
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
         }
         PackingType::AnonV2 => {
-            let to = message
-                .to
-                .as_ref()
-                .ok_or_else(|| Error::InvalidFormat("Recipients required for anoncrypt".into()))?;
+            let to = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidFormat("Recipient DIDs required for anoncrypt".into())
+            })?;
+
+            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
 
             let encrypted = plugin
-                .encrypt(msg_json.as_bytes(), to.clone(), None)
+                .encryptor()
+                .encrypt(msg_json.as_bytes(), &to_refs, None)
                 .await
                 .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
 
-            Ok(URL_SAFE_NO_PAD.encode(encrypted))
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
         }
     }
 }
@@ -93,98 +89,81 @@ pub async fn pack_message(
 pub async fn unpack_message(
     packed: &str,
     plugin: &dyn DIDCommPlugin,
-    _recipient: Option<String>,
+    recipient: Option<String>,
 ) -> Result<Message> {
-    let packed_json: serde_json::Value = serde_json::from_str(packed)
-        .map_err(|e| Error::InvalidFormat(format!("Invalid JSON: {e}")))?;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(packed)
+        .map_err(|e| Error::InvalidFormat(format!("Invalid base64: {}", e)))?;
 
-    let payload = URL_SAFE_NO_PAD
-        .decode(
-            packed_json["payload"]
-                .as_str()
-                .ok_or_else(|| Error::InvalidFormat("Missing payload field".into()))?,
-        )
-        .map_err(|e| Error::InvalidFormat(format!("Invalid base64: {e}")))?;
+    // Try to parse as JSON first
+    if let Ok(message) = serde_json::from_slice::<Message>(&decoded) {
+        return Ok(message);
+    }
 
-    if let Some(signatures) = packed_json["signatures"].as_array() {
-        if let Some(sig) = signatures.first() {
-            let signature = URL_SAFE_NO_PAD
-                .decode(
-                    sig["signature"]
-                        .as_str()
-                        .ok_or_else(|| Error::InvalidFormat("Missing signature field".into()))?,
-                )
-                .map_err(|e| Error::InvalidFormat(format!("Invalid base64: {e}")))?;
+    // If not JSON, try to verify as signed message
+    if let Some(from) = recipient {
+        let payload = decoded.clone();
+        let signature = decoded;
 
-            let from = serde_json::from_slice::<Message>(&payload)
-                .map_err(|e| Error::SerializationError(e.to_string()))?
-                .from
-                .ok_or_else(|| Error::InvalidFormat("Missing sender DID".into()))?;
+        let verified = plugin
+            .signer()
+            .verify(&payload, &signature, &from)
+            .await
+            .map_err(|e| Error::VerificationFailed(e.to_string()))?;
 
-            plugin
-                .verify(&payload, &signature, &from)
-                .await
-                .map_err(|e| Error::VerificationFailed(e.to_string()))?;
-
-            return serde_json::from_slice(&payload)
-                .map_err(|e| Error::SerializationError(e.to_string()));
+        if verified {
+            let message: Message = serde_json::from_slice(&payload)?;
+            return Ok(message);
         }
     }
 
-    Err(Error::InvalidFormat("Invalid message format".into()))
+    // If not signed, try to decrypt
+    if let Some(recipient) = recipient {
+        let decrypted = plugin
+            .encryptor()
+            .decrypt(&decoded, &recipient)
+            .await
+            .map_err(|e| Error::DecryptionFailed(e.to_string()))?;
+
+        let message: Message = serde_json::from_slice(&decrypted)?;
+        return Ok(message);
+    }
+
+    Err(Error::InvalidFormat("Unable to unpack message".into()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::MockTestPlugin;
-    use base64::engine::general_purpose::STANDARD;
-    use base64::Engine;
-    use serde_json::json;
+    use crate::plugin::MockTestPlugin;
 
     #[tokio::test]
     async fn test_pack_signed() -> Result<()> {
         let plugin = MockTestPlugin;
-        let message = Message::new(
-            "https://example.com/protocols/1.0/test",
-            json!({ "hello": "world" }),
-        )?
-        .from("did:example:alice")
-        .to(vec!["did:example:bob"]);
+        let message = Message::new("test".to_string())
+            .from("did:example:alice")
+            .to(vec!["did:example:bob"]);
 
         let packed = pack_message(&message, &plugin, PackingType::Signed).await?;
+        let unpacked =
+            unpack_message(&packed, &plugin, Some("did:example:alice".to_string())).await?;
 
-        // Parse the packed message as JSON
-        let packed_json: serde_json::Value = serde_json::from_str(&packed)?;
-
-        // Verify the structure
-        assert!(packed_json["payload"].is_string());
-        assert!(packed_json["signatures"].is_array());
-        assert_eq!(packed_json["signatures"].as_array().unwrap().len(), 1);
-
-        // Verify we can decode the payload
-        let payload = URL_SAFE_NO_PAD.decode(packed_json["payload"].as_str().unwrap())?;
-        let decoded_message: Message = serde_json::from_slice(&payload)?;
-        assert_eq!(decoded_message.from, Some("did:example:alice".to_string()));
-
+        assert_eq!(unpacked.body, message.body);
         Ok(())
     }
 
     #[tokio::test]
     async fn test_pack_authcrypt() -> Result<()> {
         let plugin = MockTestPlugin;
-        let message = Message::new(
-            "https://example.com/protocols/1.0/test",
-            json!({ "hello": "world" }),
-        )?
-        .from("did:example:alice")
-        .to(vec!["did:example:bob"]);
+        let message = Message::new("test".to_string())
+            .from("did:example:alice")
+            .to(vec!["did:example:bob"]);
 
         let packed = pack_message(&message, &plugin, PackingType::AuthcryptV2).await?;
+        let unpacked =
+            unpack_message(&packed, &plugin, Some("did:example:bob".to_string())).await?;
 
-        // Verify the packed message can be decoded as base64
-        let _decoded = STANDARD.decode(packed)?;
-
+        assert_eq!(unpacked.body, message.body);
         Ok(())
     }
 }

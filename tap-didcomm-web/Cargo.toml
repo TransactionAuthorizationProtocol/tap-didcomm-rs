@@ -6,21 +6,17 @@ edition = "2021"
 [dependencies]
 tap-didcomm-core = { path = "../tap-didcomm-core" }
 tap-didcomm-node = { path = "../tap-didcomm-node" }
-actix-web = "4.4"
-actix = "0.13"
-actix-cors = "0.6"
-actix-rt = "2.9"
+warp = "0.3"
+tokio = { version = "1.36", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
+base64 = "0.22"
 async-trait = "0.1"
 thiserror = "1.0"
 tracing = "0.1"
-anyhow = "1.0"
-tracing-actix-web = "0.7"
-env_logger = "0.10"
-base64 = "0.21"
-log = "0.4"
+tracing-subscriber = "0.3"
+utoipa = { version = "4.2", features = ["uuid"] }
+utoipa-swagger-ui = "6.0"
 
 # SSI dependencies
 ssi = { version = "0.7", features = ["http-did"] }

@@ -100,8 +100,9 @@
 //! - Test implementations thoroughly
 //! - Consider side-channel attacks
 
-use crate::{DIDDocument, Result};
+use crate::error::Result;
 use async_trait::async_trait;
+use ssi_dids::did_resolve::Content as DIDDocument;
 
 /// Resolves DIDs to DID Documents.
 #[async_trait]
@@ -112,13 +113,8 @@ pub trait DIDResolver: Send + Sync {
     /// * `did` - The DID to resolve (e.g., "did:example:123")
     ///
     /// # Returns
-    /// The resolved DID Document or an error
-    ///
-    /// # Errors
-    /// - If the DID is invalid
-    /// - If resolution fails
-    /// - If the DID Document is invalid
-    async fn resolve(&self, did: &str) -> Result<DIDDocument>;
+    /// The resolved DID Document as a JSON string or an error
+    async fn resolve(&self, did: &str) -> Result<String>;
 }
 
 /// Signs and verifies messages.
@@ -127,8 +123,8 @@ pub trait Signer: Send + Sync {
     /// Signs data using a specified key.
     ///
     /// # Arguments
-    /// * `data` - The data to sign
-    /// * `key_id` - The key ID to use for signing
+    /// * `message` - The data to sign
+    /// * `from` - The key ID to use for signing
     ///
     /// # Returns
     /// The signature or an error
@@ -137,14 +133,14 @@ pub trait Signer: Send + Sync {
     /// - If the key is not found
     /// - If signing fails
     /// - If the data is invalid
-    async fn sign(&self, data: &[u8], key_id: &str) -> Result<Vec<u8>>;
+    async fn sign(&self, message: &[u8], from: &str) -> Result<Vec<u8>>;
 
     /// Verifies a signature.
     ///
     /// # Arguments
-    /// * `data` - The original data that was signed
+    /// * `message` - The original data that was signed
     /// * `signature` - The signature to verify
-    /// * `key_id` - The key ID to use for verification
+    /// * `from` - The key ID to use for verification
     ///
     /// # Returns
     /// Whether the signature is valid or an error
@@ -153,7 +149,7 @@ pub trait Signer: Send + Sync {
     /// - If the key is not found
     /// - If verification fails
     /// - If the data or signature is invalid
-    async fn verify(&self, data: &[u8], signature: &[u8], key_id: &str) -> Result<bool>;
+    async fn verify(&self, message: &[u8], signature: &[u8], from: &str) -> Result<bool>;
 }
 
 /// Encrypts and decrypts messages.
@@ -162,9 +158,9 @@ pub trait Encryptor: Send + Sync {
     /// Encrypts data for one or more recipients.
     ///
     /// # Arguments
-    /// * `data` - The data to encrypt
-    /// * `recipients` - The recipient DIDs
-    /// * `sender` - Optional sender DID for authenticated encryption
+    /// * `message` - The data to encrypt
+    /// * `to` - The recipient DIDs
+    /// * `from` - Optional sender DID for authenticated encryption
     ///
     /// # Returns
     /// The encrypted data or an error
@@ -173,17 +169,12 @@ pub trait Encryptor: Send + Sync {
     /// - If recipient keys cannot be resolved
     /// - If encryption fails
     /// - If the data is invalid
-    async fn encrypt(
-        &self,
-        data: &[u8],
-        recipients: &[&str],
-        sender: Option<&str>,
-    ) -> Result<Vec<u8>>;
+    async fn encrypt(&self, message: &[u8], to: &[&str], from: Option<&str>) -> Result<Vec<u8>>;
 
     /// Decrypts data.
     ///
     /// # Arguments
-    /// * `data` - The encrypted data
+    /// * `message` - The encrypted data
     /// * `recipient` - The recipient DID
     ///
     /// # Returns
@@ -193,14 +184,10 @@ pub trait Encryptor: Send + Sync {
     /// - If the recipient key cannot be found
     /// - If decryption fails
     /// - If the data is invalid
-    async fn decrypt(&self, data: &[u8], recipient: &str) -> Result<Vec<u8>>;
+    async fn decrypt(&self, message: &[u8], recipient: &str) -> Result<Vec<u8>>;
 }
 
-/// Combined interface for DIDComm operations.
-///
-/// This trait combines DID resolution, signing, and encryption capabilities
-/// into a single interface. Implementations should provide access to concrete
-/// implementations of each capability.
+/// A DIDComm plugin that provides DID resolution and cryptographic operations.
 pub trait DIDCommPlugin: Send + Sync {
     /// Gets the DID resolver implementation.
     fn resolver(&self) -> &dyn DIDResolver;
@@ -215,60 +202,91 @@ pub trait DIDCommPlugin: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockall::mock;
-    use mockall::predicate::*;
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
 
-    mock! {
-        TestPlugin {}
+    pub struct MockTestPlugin;
 
-        #[async_trait]
-        impl DIDResolver for TestPlugin {
-            async fn resolve(&self, did: &str) -> Result<String>;
-        }
-
-        #[async_trait]
-        impl Signer for TestPlugin {
-            async fn sign(&self, message: &[u8], key_id: &str) -> Result<Vec<u8>>;
-            async fn verify(&self, message: &[u8], signature: &[u8], key_id: &str) -> Result<bool>;
-        }
-
-        #[async_trait]
-        impl Encryptor for TestPlugin {
-            async fn encrypt(&self, message: &[u8], to: Vec<String>, from: Option<String>) -> Result<Vec<u8>>;
-            async fn decrypt(&self, message: &[u8], recipient: String) -> Result<Vec<u8>>;
+    #[async_trait]
+    impl DIDResolver for MockTestPlugin {
+        async fn resolve(&self, _did: &str) -> Result<String> {
+            Ok(r#"{"id":"did:example:123"}"#.to_string())
         }
     }
 
-    impl DIDCommPlugin for MockTestPlugin {}
+    #[async_trait]
+    impl Signer for MockTestPlugin {
+        async fn sign(&self, message: &[u8], _from: &str) -> Result<Vec<u8>> {
+            Ok(STANDARD.encode(message).into_bytes())
+        }
+
+        async fn verify(&self, message: &[u8], signature: &[u8], _from: &str) -> Result<bool> {
+            Ok(message == signature)
+        }
+    }
+
+    #[async_trait]
+    impl Encryptor for MockTestPlugin {
+        async fn encrypt(
+            &self,
+            message: &[u8],
+            _to: &[&str],
+            _from: Option<&str>,
+        ) -> Result<Vec<u8>> {
+            Ok(STANDARD.encode(message).into_bytes())
+        }
+
+        async fn decrypt(&self, message: &[u8], _recipient: &str) -> Result<Vec<u8>> {
+            Ok(STANDARD.decode(message)?)
+        }
+    }
+
+    impl DIDCommPlugin for MockTestPlugin {
+        fn resolver(&self) -> &dyn DIDResolver {
+            self
+        }
+
+        fn signer(&self) -> &dyn Signer {
+            self
+        }
+
+        fn encryptor(&self) -> &dyn Encryptor {
+            self
+        }
+    }
 
     #[tokio::test]
     async fn test_plugin_mock() {
-        let mut plugin = MockTestPlugin::new();
-        let test_message = b"test message";
-        let test_signature = b"test signature";
-        let test_key = "did:example:123";
+        let plugin = MockTestPlugin;
+        let message = b"test message";
 
-        plugin
-            .expect_sign()
-            .with(eq(test_message.as_ref()), eq(test_key))
-            .returning(|_, _| Ok(b"test signature".to_vec()));
+        // Test encryption/decryption
+        let encrypted = plugin
+            .encryptor()
+            .encrypt(message, &["did:example:123"], None)
+            .await
+            .unwrap();
+        let decrypted = plugin
+            .encryptor()
+            .decrypt(&encrypted, "did:example:123")
+            .await
+            .unwrap();
+        assert_eq!(message, decrypted.as_slice());
 
-        plugin
-            .expect_verify()
-            .with(
-                eq(test_message.as_ref()),
-                eq(test_signature.as_ref()),
-                eq(test_key),
-            )
-            .returning(|_, _, _| Ok(true));
-
-        let signature = plugin.sign(test_message, test_key).await.unwrap();
-        assert_eq!(signature, test_signature);
-
+        // Test signing/verification
+        let signature = plugin
+            .signer()
+            .sign(message, "did:example:123")
+            .await
+            .unwrap();
         let valid = plugin
-            .verify(test_message, test_signature, test_key)
+            .signer()
+            .verify(message, &signature, "did:example:123")
             .await
             .unwrap();
         assert!(valid);
+
+        // Test DID resolution
+        let doc = plugin.resolver().resolve("did:example:123").await.unwrap();
+        assert!(doc.contains("did:example:123"));
     }
 }
