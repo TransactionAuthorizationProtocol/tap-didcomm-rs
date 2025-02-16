@@ -204,6 +204,8 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
      - [X] Fix EphemeralSecret API usage
      - [X] Fix error conversion in key wrapping
      - [X] Fix error conversion in content encryption
+     - [X] Fix type mismatches in AES-GCM operations
+     - [X] Fix HMAC initialization
 
 2. Trait Implementations (Priority 2)
    - [ ] Add Display for ContentEncryptionAlgorithm
