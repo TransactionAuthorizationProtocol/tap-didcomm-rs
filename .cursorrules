@@ -17,21 +17,80 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 
 # Rust Rules
 
-- Always write idiomatic Rust code.
-- Every new function or module must include comprehensive unit tests.
-- Use Rust's error handling best practices (Result<T, E>, ? operator, etc.).
-- Document all public APIs with comprehensiverustdoc comments (///).
-- Maintain a modular design: keep CAIP, DIDComm, TAP core, and WASM bindings separate.
-- Use cargo fmt and clippy for formatting and linting.
-- Prioritize clear and maintainable code.
-- Check off tasks in the project plan file as soon as they are complete.
-- Ensure CI/CD integration is updated as features are added.
-- Always build the entire project before fixing a task as a compilation error would cause the entire project to fail.
-- Always ensure that tests are run before finishing a task
-- Aim for 100% test coverage on all modules.
-- For WASM components, ensure proper bindings with `wasm-bindgen` and test in a JavaScript environment.
-- Provide TypeScript definitions that accurately reflect the WASM APIs.
-- When running `cargo doc` please do not use the `--open` flag.
+## Build and Test Workflow
+1. Always run the following commands in sequence before AND after making code changes:
+   - `cargo fmt` - Format all code
+   - `cargo clippy` - Check for lints and common mistakes
+   - `cargo build` - Ensure everything compiles
+   - `cargo test` - Run all tests
+
+2. Work through crates in the following sequence:
+   - `tap-didcomm-core` - Core functionality first
+   - `tap-didcomm-node` - Node.js bindings second
+   - `tap-didcomm-web` - Web bindings third
+   - `tap-didcomm-ts` - TypeScript integration last
+
+3. For TypeScript changes:
+   - After Rust changes, run `pnpm build:wasm` in `tap-didcomm-ts`
+   - Run `pnpm test` to verify TypeScript integration
+
+## Code Quality
+- Always write idiomatic Rust code
+- Every new function or module must include comprehensive unit tests
+- Use Rust's error handling best practices (Result<T, E>, ? operator, etc.)
+- Document all public APIs with comprehensive rustdoc comments (///)
+- Maintain a modular design: keep CAIP, DIDComm, TAP core, and WASM bindings separate
+- Prioritize clear and maintainable code
+- Check off tasks in the project plan file as soon as they are complete
+
+## Testing
+- Aim for 100% test coverage on all modules
+- Test both success and error cases
+- Include integration tests between crates
+- Test WASM bindings in both Node.js and browser environments
+- Verify TypeScript type definitions match Rust APIs
+
+## WASM Considerations
+- Keep WASM-specific dependencies at the crate level
+- Use separate WASM targets for web and Node.js builds
+- Ensure proper error handling across language boundaries
+- Test WASM bindings in both Node.js and browser contexts
+- Provide accurate TypeScript definitions
+
+## Documentation
+- Document all public APIs with comprehensive rustdoc comments
+- Include examples in documentation
+- Document WASM usage in TypeScript
+- Keep README files up to date
+- When running `cargo doc` do not use the `--open` flag
+
+## Error Handling
+- Use thiserror for deriving error implementations
+- Ensure descriptive error messages
+- Handle all error cases explicitly
+- Test error conditions
+- Properly convert errors across language boundaries
+
+## Dependencies
+- Keep dependencies up to date
+- Minimize dependency footprint
+- Use consistent versions across crates
+- Handle WASM-specific dependencies appropriately
+- Document dependency requirements
+
+## CI/CD
+- Ensure CI/CD integration is updated as features are added
+- All tests must pass before merging
+- Maintain consistent formatting
+- Address all clippy warnings
+- Build documentation in CI
+
+## Security
+- Follow cryptographic best practices
+- Handle sensitive data appropriately
+- Use secure random number generation
+- Validate all inputs
+- Test security-critical code thoroughly
 
 # Typescript Rules
 
@@ -132,6 +191,77 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 4. Update the build process if needed
 
 # Scratchpad
+
+## Current Task: Fix Cryptographic API Usage
+
+### Overview
+Need to fix EphemeralSecret API usage and validate all crypto operations.
+
+### Progress Tracking
+[X] Review current implementation
+[X] Fix AES-KW key handling with GenericArray
+[X] Fix HMAC trait ambiguity
+[X] Update EphemeralSecret API usage
+[X] Fix duplicate test names
+[X] Fix trait implementations
+[X] Add missing implementations
+[ ] Run formatting and tests
+[ ] Fix any remaining issues
+
+### Strategy
+- Check latest API docs for EphemeralSecret
+- Import required traits
+- Update method calls
+- Run cargo fmt, clippy, and test
+
+### Notes
+- Fixed JweError trait conflicts
+- Added proper EphemeralPublicKey implementation
+- Fixed DIDResolver trait implementation
+- Added utils module with DID validation
+- Fixed MockTestPlugin implementation
+
+## Current Task: Fix Ownership/Move Errors in pack.rs
+
+### Overview
+Need to fix ownership issues in pack.rs by properly handling references and clones for recipient and other moved values.
+
+### Progress Tracking
+[X] Review current implementation
+[X] Fix pattern matching to use references
+[X] Add explicit clones where needed
+[X] Add missing imports and traits
+[X] Create missing modules and types
+[ ] Verify changes compile
+[ ] Run tests
+
+### Strategy
+- Use `if let Some(ref recipient)` instead of moving values
+- Add explicit clones where data needs to be used multiple times
+- Keep original data intact for subsequent operations
+
+### Notes
+- Fixed conflicting trait implementations in JweError
+- Created missing modules and types
+- Added proper trait implementations
+- Organized module structure
+
+## Current Task: Update JweError enum
+
+### Overview
+Need to add missing error variants to JweError enum to support all error cases from algorithms and header modules.
+
+### Progress Tracking
+[X] Review current JweError implementation
+[X] Identify missing variants
+[X] Add new variants with proper documentation
+[X] Ensure proper error conversion implementations
+[X] Verify changes compile
+
+### Notes
+- Added all missing variants with documentation
+- Implemented From trait for serde_json::Error
+- Used descriptive error messages
 
 ## Current Task: Fix tap-didcomm-web Package
 
