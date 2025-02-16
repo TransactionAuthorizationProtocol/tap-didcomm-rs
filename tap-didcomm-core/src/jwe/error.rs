@@ -115,6 +115,44 @@ impl From<serde_json::Error> for JweError {
     }
 }
 
+// Add conversion from JweError to Error for cross-crate error handling
+impl From<JweError> for Error {
+    fn from(err: JweError) -> Self {
+        match err {
+            JweError::Base64(ctx, e) => {
+                Error::InvalidFormat(format!("Base64 error in {}: {}", ctx, e))
+            }
+            JweError::Json(e) => Error::InvalidFormat(format!("JSON error: {}", e)),
+            JweError::Core(e) => e,
+            JweError::KeyAgreement(msg) => {
+                Error::InvalidFormat(format!("Key agreement error: {}", msg))
+            }
+            JweError::Header(msg) => Error::InvalidFormat(format!("Header error: {}", msg)),
+            JweError::InvalidKey(msg) => Error::InvalidFormat(format!("Invalid key: {}", msg)),
+            JweError::Encryption(msg) => Error::EncryptionFailed(msg),
+            JweError::Decryption(msg) => Error::DecryptionFailed(msg),
+            JweError::AuthenticationFailed => Error::InvalidFormat("Authentication failed".into()),
+            JweError::InvalidCurve(msg) => Error::InvalidFormat(format!("Invalid curve: {}", msg)),
+            JweError::InvalidAlgorithm(msg) => {
+                Error::InvalidFormat(format!("Invalid algorithm: {}", msg))
+            }
+            JweError::InvalidFormat(msg) => Error::InvalidFormat(msg),
+            JweError::InvalidDIDDocument(msg) => {
+                Error::InvalidFormat(format!("Invalid DID Document: {}", msg))
+            }
+            JweError::InvalidKeyMaterial(msg) => {
+                Error::InvalidFormat(format!("Invalid key material: {}", msg))
+            }
+            JweError::KeyWrap(msg) => {
+                Error::EncryptionFailed(format!("Key wrapping failed: {}", msg))
+            }
+            JweError::ContentEncryption(msg) => {
+                Error::EncryptionFailed(format!("Content encryption error: {}", msg))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

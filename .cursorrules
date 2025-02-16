@@ -195,13 +195,15 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 ## Current Task: Fix tap-didcomm-core Critical Linter Errors
 
 ### Current Focus
-Starting with the most critical errors that affect multiple files:
-
 1. Error Handling (Priority 1)
    - [X] Fix duplicate From<serde_json::Error> implementation in JweError
    - [X] Add proper error conversion for cryptographic errors
-   - [ ] Fix error propagation in algorithms.rs
-   - [ ] Implement proper error conversion between Error and JweError
+   - [X] Implement proper error conversion between Error and JweError
+   - [X] Fix error propagation in algorithms.rs:
+     - [X] Fix KeyInit trait ambiguity
+     - [X] Fix EphemeralSecret API usage
+     - [X] Fix error conversion in key wrapping
+     - [X] Fix error conversion in content encryption
 
 2. Trait Implementations (Priority 2)
    - [ ] Add Display for ContentEncryptionAlgorithm
@@ -209,11 +211,10 @@ Starting with the most critical errors that affect multiple files:
    - [ ] Fix MockTestPlugin trait implementations
    - [ ] Import base64::Engine trait for decode operations
 
-3. Cryptographic API (Priority 3)
-   - [ ] Fix EphemeralSecret API usage for all curves
-   - [ ] Import elliptic_curve::sec1::ToEncodedPoint
-   - [ ] Fix HMAC trait ambiguity
-   - [ ] Fix GenericArray type mismatches
+Next steps:
+1. Implement Display traits for enums
+2. Fix MockTestPlugin implementations
+3. Add base64::Engine trait imports
 
 ### Implementation Order
 1. Start with error.rs:
