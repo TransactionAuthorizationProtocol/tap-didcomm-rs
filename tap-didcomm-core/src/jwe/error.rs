@@ -5,9 +5,10 @@
 //! Each error type provides detailed information about what went wrong to help with
 //! debugging and error handling.
 
-use std::fmt;
-use std::error::Error as StdError;
+use crate::error::Error;
 use base64::DecodeError;
+use std::error::Error as StdError;
+use thiserror::Error;
 
 /// Result type for JWE operations.
 pub type Result<T> = std::result::Result<T, JweError>;
@@ -29,68 +30,71 @@ pub type Result<T> = std::result::Result<T, JweError>;
 ///     "Invalid key: Key length must be 32 bytes"
 /// );
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum JweError {
     /// Error during key agreement operation
+    #[error("Key agreement error: {0}")]
     KeyAgreement(String),
 
     /// Error processing the JWE header
+    #[error("Header error: {0}")]
     Header(String),
 
     /// Invalid key material
+    #[error("Invalid key: {0}")]
     InvalidKey(String),
 
     /// Error during encryption operation
+    #[error("Encryption error: {0}")]
     Encryption(String),
 
     /// Error during decryption operation
+    #[error("Decryption error: {0}")]
     Decryption(String),
 
     /// Authentication failed during decryption
+    #[error("Authentication failed")]
     AuthenticationFailed,
 
     /// Base64 encoding/decoding error
-    Base64(&'static str, DecodeError),
+    #[error("Base64 error in {0}: {1}")]
+    Base64(&'static str, #[source] DecodeError),
 
     /// JSON serialization/deserialization error
-    Serialization(serde_json::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
 
     /// Invalid curve specified for operation
+    #[error("Invalid curve: {0}")]
     InvalidCurve(String),
 
     /// Invalid algorithm specified for operation
+    #[error("Invalid algorithm: {0}")]
     InvalidAlgorithm(String),
 
     /// Invalid message format
+    #[error("Invalid format: {0}")]
     InvalidFormat(String),
-}
 
-impl fmt::Display for JweError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::KeyAgreement(msg) => write!(f, "Key agreement error: {}", msg),
-            Self::Header(msg) => write!(f, "Header error: {}", msg),
-            Self::InvalidKey(msg) => write!(f, "Invalid key: {}", msg),
-            Self::Encryption(msg) => write!(f, "Encryption error: {}", msg),
-            Self::Decryption(msg) => write!(f, "Decryption error: {}", msg),
-            Self::AuthenticationFailed => write!(f, "Authentication failed"),
-            Self::Base64(ctx, err) => write!(f, "Base64 error in {}: {}", ctx, err),
-            Self::Serialization(err) => write!(f, "Serialization error: {}", err),
-            Self::InvalidCurve(msg) => write!(f, "Invalid curve: {}", msg),
-            Self::InvalidAlgorithm(msg) => write!(f, "Invalid algorithm: {}", msg),
-            Self::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
-        }
-    }
-}
+    /// Error when parsing or validating a DID Document
+    #[error("Invalid DID Document: {0}")]
+    InvalidDIDDocument(String),
 
-impl StdError for JweError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            Self::Base64(_, err) => Some(err),
-            Self::Serialization(err) => Some(err),
-            _ => None,
-        }
-    }
+    /// Error when key material is invalid or in wrong format
+    #[error("Invalid key material: {0}")]
+    InvalidKeyMaterial(String),
+
+    /// Error during key wrapping operation
+    #[error("Key wrapping failed: {0}")]
+    KeyWrap(String),
+
+    /// Error during content encryption/decryption
+    #[error("Content encryption error: {0}")]
+    ContentEncryption(String),
+
+    /// Core error
+    #[error(transparent)]
+    Core(#[from] Error),
 }
 
 impl From<DecodeError> for JweError {
@@ -99,9 +103,15 @@ impl From<DecodeError> for JweError {
     }
 }
 
+impl From<Error> for JweError {
+    fn from(err: Error) -> Self {
+        Self::Core(err)
+    }
+}
+
 impl From<serde_json::Error> for JweError {
     fn from(err: serde_json::Error) -> Self {
-        Self::Serialization(err)
+        Self::Json(err)
     }
 }
 
@@ -112,15 +122,46 @@ mod tests {
     #[test]
     fn test_error_display() {
         let errors = [
-            (JweError::KeyAgreement("test".into()), "Key agreement error: test"),
+            (
+                JweError::KeyAgreement("test".into()),
+                "Key agreement error: test",
+            ),
             (JweError::Header("test".into()), "Header error: test"),
             (JweError::InvalidKey("test".into()), "Invalid key: test"),
-            (JweError::Encryption("test".into()), "Encryption error: test"),
-            (JweError::Decryption("test".into()), "Decryption error: test"),
+            (
+                JweError::Encryption("test".into()),
+                "Encryption error: test",
+            ),
+            (
+                JweError::Decryption("test".into()),
+                "Decryption error: test",
+            ),
             (JweError::AuthenticationFailed, "Authentication failed"),
             (JweError::InvalidCurve("test".into()), "Invalid curve: test"),
-            (JweError::InvalidAlgorithm("test".into()), "Invalid algorithm: test"),
-            (JweError::InvalidFormat("test".into()), "Invalid format: test"),
+            (
+                JweError::InvalidAlgorithm("test".into()),
+                "Invalid algorithm: test",
+            ),
+            (
+                JweError::InvalidFormat("test".into()),
+                "Invalid format: test",
+            ),
+            (
+                JweError::InvalidDIDDocument("test".into()),
+                "Invalid DID Document: test",
+            ),
+            (
+                JweError::InvalidKeyMaterial("test".into()),
+                "Invalid key material: test",
+            ),
+            (
+                JweError::KeyWrap("test".into()),
+                "Key wrapping failed: test",
+            ),
+            (
+                JweError::ContentEncryption("test".into()),
+                "Content encryption error: test",
+            ),
         ];
 
         for (error, expected) in errors.iter() {
@@ -132,10 +173,12 @@ mod tests {
     fn test_error_conversion() {
         let json_err = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
         let jwe_err = JweError::from(json_err);
-        assert!(matches!(jwe_err, JweError::Serialization(_)));
+        assert!(matches!(jwe_err, JweError::Json(_)));
 
-        let base64_err = base64::engine::general_purpose::STANDARD.decode("invalid").unwrap_err();
+        let base64_err = base64::engine::general_purpose::STANDARD
+            .decode("invalid")
+            .unwrap_err();
         let jwe_err = JweError::from(base64_err);
         assert!(matches!(jwe_err, JweError::Base64(_, _)));
     }
-} 
+}

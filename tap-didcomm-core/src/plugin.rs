@@ -107,14 +107,8 @@ use ssi_dids::did_resolve::Content as DIDDocument;
 /// Resolves DIDs to DID Documents.
 #[async_trait]
 pub trait DIDResolver: Send + Sync {
-    /// Resolves a DID to its DID Document.
-    ///
-    /// # Arguments
-    /// * `did` - The DID to resolve (e.g., "did:example:123")
-    ///
-    /// # Returns
-    /// The resolved DID Document as a JSON string or an error
-    async fn resolve(&self, did: &str) -> Result<String>;
+    /// Resolves a DID to a DID Document
+    async fn resolve(&self, did: &str) -> crate::error::Result<String>;
 }
 
 /// Signs and verifies messages.
@@ -199,6 +193,32 @@ pub trait DIDCommPlugin: Send + Sync {
     fn encryptor(&self) -> &dyn Encryptor;
 }
 
+#[async_trait::async_trait]
+pub trait DIDCommPlugins {
+    async fn resolve_did(&self, did: &str) -> crate::error::Result<Vec<u8>>;
+    async fn get_signer(&self, did: &str) -> crate::error::Result<Box<dyn Signer>>;
+}
+
+// For testing
+#[cfg(test)]
+pub struct MockTestPlugin;
+
+#[cfg(test)]
+#[async_trait::async_trait]
+impl DIDCommPlugin for MockTestPlugin {
+    fn resolver(&self) -> &dyn DIDResolver {
+        self
+    }
+
+    fn signer(&self) -> &dyn Signer {
+        self
+    }
+
+    fn encryptor(&self) -> &dyn Encryptor {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,7 +228,7 @@ mod tests {
 
     #[async_trait]
     impl DIDResolver for MockTestPlugin {
-        async fn resolve(&self, _did: &str) -> Result<String> {
+        async fn resolve(&self, _did: &str) -> crate::error::Result<String> {
             Ok(r#"{"id":"did:example:123"}"#.to_string())
         }
     }

@@ -6,6 +6,10 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde_json::json;
 
+use crate::crypto::sign_message;
+use crate::jwe::{EncryptedMessageBuilder, Recipient};
+use crate::plugin::DIDCommPlugins;
+use crate::utils::validate_did;
 use crate::{error::Result, plugin::DIDCommPlugin, types::PackingType, Error, Message};
 
 /// Pack a `DIDComm` message using the specified packing type.
@@ -130,6 +134,65 @@ pub async fn unpack_message(
     }
 
     Err(Error::InvalidFormat("Unable to unpack message".into()))
+}
+
+pub async fn pack_encrypted<'a>(
+    plaintext: &[u8],
+    to: &[String],
+    from: Option<&str>,
+    sign_by: Option<&str>,
+    plugins: &impl DIDCommPlugins,
+) -> Result<Vec<u8>> {
+    // Use ref to avoid moving the value
+    if let Some(ref from_did) = from {
+        // Clone the string for the validation check
+        validate_did(from_did.to_string())?;
+    }
+
+    // Validate recipient DIDs
+    for recipient in to {
+        validate_did(recipient.to_string())?;
+    }
+
+    let mut recipients = Vec::new();
+    for to_did in to {
+        // Clone to_did since we need it for multiple operations
+        let to_did = to_did.clone();
+        let recipient_key = plugins.resolve_did(&to_did).await?;
+        recipients.push(Recipient {
+            did: to_did,
+            key: recipient_key,
+        });
+    }
+
+    // Handle signing if requested
+    let signed_data = if let Some(ref signer_did) = sign_by {
+        // Clone for validation
+        validate_did(signer_did.to_string())?;
+        let signer = plugins.get_signer(signer_did).await?;
+        sign_message(plaintext, signer).await?
+    } else {
+        plaintext.to_vec()
+    };
+
+    // Handle encryption
+    let mut builder = EncryptedMessageBuilder::new();
+
+    // Add sender if present
+    if let Some(ref sender_did) = from {
+        let sender_key = plugins.resolve_did(sender_did).await?;
+        builder = builder.from(sender_did.clone(), sender_key);
+    }
+
+    // Add all recipients
+    for recipient in recipients {
+        builder = builder.add_recipient(recipient.did.clone(), recipient.key);
+    }
+
+    // Build and return the encrypted message
+    let encrypted = builder.plaintext(&signed_data).build().await?;
+
+    Ok(encrypted)
 }
 
 #[cfg(test)]

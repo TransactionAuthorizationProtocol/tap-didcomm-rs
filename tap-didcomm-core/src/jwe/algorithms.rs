@@ -25,13 +25,13 @@ use aes_gcm::{
 use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
-use p256::ecdh::EphemeralSecret as P256EphemeralSecret;
+use p256::ecdh::{EphemeralSecret as P256EphemeralSecret, SharedSecret as P256SharedSecret};
 use p256::EncodedPoint as P256EncodedPoint;
 use p256::PublicKey as P256PublicKey;
-use p384::ecdh::EphemeralSecret as P384EphemeralSecret;
+use p384::ecdh::{EphemeralSecret as P384EphemeralSecret, SharedSecret as P384SharedSecret};
 use p384::EncodedPoint as P384EncodedPoint;
 use p384::PublicKey as P384PublicKey;
-use p521::ecdh::EphemeralSecret as P521EphemeralSecret;
+use p521::ecdh::{EphemeralSecret as P521EphemeralSecret, SharedSecret as P521SharedSecret};
 use p521::elliptic_curve;
 use p521::EncodedPoint as P521EncodedPoint;
 use p521::PublicKey as P521PublicKey;
@@ -44,6 +44,8 @@ use super::{
     error::{JweError, Result},
     ContentEncryptionAlgorithm, EcdhCurve, EncryptionKey,
 };
+
+use aes::cipher::{generic_array::GenericArray, KeyInit};
 
 /// The size of an AES-256 key in bytes.
 const AES_256_KEY_SIZE: usize = 32;
@@ -128,26 +130,23 @@ pub fn generate_ephemeral_keypair(curve: EcdhCurve) -> Result<(Vec<u8>, Vec<u8>)
     }
 }
 
-/// Performs X25519 key agreement.
+/// Performs X25519 key agreement
 fn x25519_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    if private_key.len() != 32 || public_key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid X25519 key length".to_string(),
-        ));
-    }
+    let secret = StaticSecret::from_slice(private_key)
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid private key: {}", e)))?;
+    
+    let public = PublicKey::from_slice(public_key)
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid public key: {}", e)))?;
 
-    let private = x25519_dalek::StaticSecret::from(<[u8; 32]>::try_from(private_key).unwrap());
-    let public = x25519_dalek::PublicKey::from(<[u8; 32]>::try_from(public_key).unwrap());
-
-    Ok(private.diffie_hellman(&public).as_bytes().to_vec())
+    Ok(secret.diffie_hellman(&public).as_bytes().to_vec())
 }
 
-/// Generates an X25519 ephemeral key pair.
+/// Generates an X25519 ephemeral keypair
 fn generate_x25519_ephemeral() -> (Vec<u8>, Vec<u8>) {
-    let private = x25519_dalek::StaticSecret::random_from_rng(OsRng);
-    let public = x25519_dalek::PublicKey::from(&private);
-
-    (private.to_bytes().to_vec(), public.as_bytes().to_vec())
+    let secret = EphemeralSecret::new(OsRng);
+    let public = PublicKey::from(&secret);
+    
+    (secret.to_bytes().to_vec(), public.as_bytes().to_vec())
 }
 
 /// Derives a key using HKDF.
@@ -179,22 +178,40 @@ pub fn derive_key(
     Ok(okm)
 }
 
-/// Wraps a key using AES-KW.
-pub fn wrap_key(kek: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-    let cipher =
-        aes_kw::Kek::new(kek).map_err(|e| JweError::KeyWrap(format!("Invalid KEK: {}", e)))?;
+/// Wraps a content encryption key using AES key wrapping
+pub fn wrap_key(kek: &[u8], cek: &[u8]) -> crate::error::Result<Vec<u8>> {
+    use aes::Aes256;
+    use aes_kw::KekAes256;
+
+    // Convert kek to GenericArray
+    let kek_array = GenericArray::from_slice(kek);
+    let cipher = KekAes256::new(kek_array);
+    
+    // Wrap the key
+    let mut wrapped = vec![0u8; cek.len() + 8];
     cipher
-        .wrap_key(key)
-        .map_err(|e| JweError::KeyWrap(format!("Key wrap failed: {}", e)))
+        .wrap_with_padding(cek, &mut wrapped)
+        .map_err(|e| JweError::KeyWrap(format!("Key wrapping failed: {}", e)))?;
+
+    Ok(wrapped)
 }
 
-/// Unwraps a key using AES-KW.
-pub fn unwrap_key(kek: &[u8], wrapped_key: &[u8]) -> Result<Vec<u8>> {
-    let cipher =
-        aes_kw::Kek::new(kek).map_err(|e| JweError::KeyWrap(format!("Invalid KEK: {}", e)))?;
+/// Unwraps a wrapped key using AES key unwrapping
+pub fn unwrap_key(kek: &[u8], wrapped: &[u8]) -> crate::error::Result<Vec<u8>> {
+    use aes::Aes256;
+    use aes_kw::KekAes256;
+
+    // Convert kek to GenericArray
+    let kek_array = GenericArray::from_slice(kek);
+    let cipher = KekAes256::new(kek_array);
+    
+    // Unwrap the key
+    let mut unwrapped = vec![0u8; wrapped.len() - 8];
     cipher
-        .unwrap_key(wrapped_key)
-        .map_err(|e| JweError::KeyWrap(format!("Key unwrap failed: {}", e)))
+        .unwrap_with_padding(wrapped, &mut unwrapped)
+        .map_err(|e| JweError::KeyWrap(format!("Key unwrapping failed: {}", e)))?;
+
+    Ok(unwrapped)
 }
 
 /// Encrypts data using AES-GCM.
@@ -411,28 +428,27 @@ pub fn decrypt_xchacha20poly1305(
         .map_err(|e| JweError::ContentEncryption(e.to_string()))
 }
 
-/// Encrypts data using AES-256-CBC with HMAC-SHA-512.
+/// Encrypts content using AES-CBC with HMAC-SHA-512
 pub fn encrypt_aes_cbc_hmac(
     key: &[u8],
     iv: &[u8],
     aad: &[u8],
     plaintext: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>)> {
-    if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid AES-256 key length".to_string(),
-        ));
-    }
-    if iv.len() != 16 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid IV length".to_string(),
-        ));
-    }
+) -> crate::error::Result<(Vec<u8>, Vec<u8>)> {
+    use aes::cipher::{BlockEncrypt, BlockEncryptMut};
+    
+    // Split key into encryption and MAC keys
+    let (mac_key, enc_key) = key.split_at(key.len() / 2);
+    
+    // Create HMAC instance with explicit type
+    let mut mac = <Hmac<Sha512>>::new_from_slice(mac_key)
+        .map_err(|e| JweError::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
 
-    // Create cipher
-    let cipher =
-        Aes256::new_from_slice(key).map_err(|e| JweError::ContentEncryption(e.to_string()))?;
-
+    // Encrypt the content
+    let enc_key_array = GenericArray::from_slice(enc_key);
+    let iv_array = GenericArray::from_slice(iv);
+    let cipher = Aes256::new(enc_key_array);
+    
     // Pad plaintext (PKCS7)
     let block_size = 16;
     let padding_len = block_size - (plaintext.len() % block_size);
@@ -441,7 +457,7 @@ pub fn encrypt_aes_cbc_hmac(
 
     // Encrypt in CBC mode
     let mut ciphertext = Vec::with_capacity(padded.len());
-    let mut prev_block = iv.to_vec();
+    let mut prev_block = iv_array.to_vec();
 
     for chunk in padded.chunks(16) {
         let mut block = [0u8; 16];
@@ -459,8 +475,6 @@ pub fn encrypt_aes_cbc_hmac(
     }
 
     // Calculate authentication tag
-    let mut mac = Hmac::<Sha512>::new_from_slice(key)
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))?;
     mac.update(aad);
     mac.update(&ciphertext);
     let tag = mac.finalize().into_bytes().to_vec();
@@ -468,50 +482,37 @@ pub fn encrypt_aes_cbc_hmac(
     Ok((ciphertext, tag))
 }
 
-/// Decrypts data using AES-256-CBC with HMAC-SHA-512.
+/// Decrypts content using AES-CBC with HMAC-SHA-512
 pub fn decrypt_aes_cbc_hmac(
     key: &[u8],
     iv: &[u8],
     aad: &[u8],
     ciphertext: &[u8],
     tag: &[u8],
-) -> Result<Vec<u8>> {
-    if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid AES-256 key length".to_string(),
-        ));
-    }
-    if iv.len() != 16 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid IV length".to_string(),
-        ));
-    }
-    if tag.len() != 64 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid authentication tag length".to_string(),
-        ));
-    }
-    if ciphertext.len() % 16 != 0 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid ciphertext length".to_string(),
-        ));
-    }
+) -> crate::error::Result<Vec<u8>> {
+    use aes::cipher::{BlockDecrypt, BlockDecryptMut};
+    
+    // Split key into encryption and MAC keys
+    let (mac_key, enc_key) = key.split_at(key.len() / 2);
+    
+    // Create HMAC instance with explicit type
+    let mut mac = <Hmac<Sha512>>::new_from_slice(mac_key)
+        .map_err(|e| JweError::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
 
-    // Verify authentication tag
-    let mut mac = Hmac::<Sha512>::new_from_slice(key)
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))?;
+    // Verify the tag
     mac.update(aad);
     mac.update(ciphertext);
     mac.verify_slice(tag)
         .map_err(|_| JweError::AuthenticationFailed)?;
 
-    // Create cipher
-    let cipher =
-        Aes256::new_from_slice(key).map_err(|e| JweError::ContentEncryption(e.to_string()))?;
-
+    // Decrypt the content
+    let enc_key_array = GenericArray::from_slice(enc_key);
+    let iv_array = GenericArray::from_slice(iv);
+    let cipher = Aes256::new(enc_key_array);
+    
     // Decrypt in CBC mode
     let mut plaintext = Vec::with_capacity(ciphertext.len());
-    let mut prev_block = iv.to_vec();
+    let mut prev_block = iv_array.to_vec();
 
     for chunk in ciphertext.chunks(16) {
         let mut block = [0u8; 16];
@@ -548,41 +549,39 @@ pub fn decrypt_aes_cbc_hmac(
     Ok(plaintext)
 }
 
-/// Performs ECDH key agreement using P-256.
+/// Performs P-256 key agreement
 fn p256_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = p256::SecretKey::from_slice(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-256 private key: {}", e)))?;
+    let secret = P256EphemeralSecret::from_bytes(private_key.into())
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid private key: {}", e)))?;
+    
+    let public = P256PublicKey::from_sec1_bytes(public_key)
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid public key: {}", e)))?;
 
-    let public = P256EncodedPoint::from_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-256 public key: {}", e)))?;
-
-    let shared = p256::ecdh::diffie_hellman(secret.to_nonzero_scalar(), public.as_affine());
-
-    Ok(shared.raw_secret_bytes().to_vec())
+    let shared = secret.diffie_hellman(&public);
+    Ok(shared.raw_secret_bytes().as_slice().to_vec())
 }
 
-/// Generates an ephemeral P-256 key pair.
+/// Generates a P-256 ephemeral keypair
 fn generate_p256_ephemeral() -> Result<(Vec<u8>, Vec<u8>)> {
     let secret = P256EphemeralSecret::random(&mut OsRng);
-    let public = secret.public_key();
-
+    let public = P256PublicKey::from(&secret);
+    
     Ok((
-        secret.secret_key().to_bytes().to_vec(),
+        secret.to_bytes().as_slice().to_vec(),
         public.to_encoded_point(false).as_bytes().to_vec(),
     ))
 }
 
-/// Performs ECDH key agreement using P-384.
+/// Performs P-384 key agreement
 fn p384_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = p384::SecretKey::from_slice(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-384 private key: {}", e)))?;
+    let secret = P384EphemeralSecret::from_bytes(private_key.into())
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid private key: {}", e)))?;
+    
+    let public = P384PublicKey::from_sec1_bytes(public_key)
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid public key: {}", e)))?;
 
-    let public = P384EncodedPoint::from_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-384 public key: {}", e)))?;
-
-    let shared = p384::ecdh::diffie_hellman(secret.to_nonzero_scalar(), public.as_affine());
-
-    Ok(shared.raw_secret_bytes().to_vec())
+    let shared = secret.diffie_hellman(&public);
+    Ok(shared.raw_secret_bytes().as_slice().to_vec())
 }
 
 /// Generates an ephemeral P-384 key pair.
@@ -596,17 +595,16 @@ fn generate_p384_ephemeral() -> Result<(Vec<u8>, Vec<u8>)> {
     ))
 }
 
-/// Performs ECDH key agreement using P-521.
+/// Performs P-521 key agreement
 fn p521_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = p521::SecretKey::from_slice(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-521 private key: {}", e)))?;
+    let secret = P521EphemeralSecret::from_bytes(private_key.into())
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid private key: {}", e)))?;
+    
+    let public = P521PublicKey::from_sec1_bytes(public_key)
+        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid public key: {}", e)))?;
 
-    let public = P521EncodedPoint::from_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-521 public key: {}", e)))?;
-
-    let shared = p521::ecdh::diffie_hellman(secret.to_nonzero_scalar(), public.as_affine());
-
-    Ok(shared.raw_secret_bytes().to_vec())
+    let shared = secret.diffie_hellman(&public);
+    Ok(shared.raw_secret_bytes().as_slice().to_vec())
 }
 
 /// Generates an ephemeral P-521 key pair.
@@ -876,14 +874,22 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_key_material() {
+    fn test_invalid_key_material_p256() {
         let invalid_key = vec![0; 32];
         let result = p256_key_agreement(&invalid_key, &invalid_key);
         assert!(result.is_err());
+    }
 
+    #[test]
+    fn test_invalid_key_material_p384() {
+        let invalid_key = vec![0; 32];
         let result = p384_key_agreement(&invalid_key, &invalid_key);
         assert!(result.is_err());
+    }
 
+    #[test]
+    fn test_invalid_key_material_p521() {
+        let invalid_key = vec![0; 32];
         let result = p521_key_agreement(&invalid_key, &invalid_key);
         assert!(result.is_err());
     }

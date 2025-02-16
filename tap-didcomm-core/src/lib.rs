@@ -69,11 +69,13 @@
 #![deny(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+pub mod crypto;
 pub mod error;
 pub mod jwe;
 pub mod pack;
 pub mod plugin;
 pub mod types;
+pub mod utils;
 
 #[cfg(test)]
 pub(crate) mod tests;

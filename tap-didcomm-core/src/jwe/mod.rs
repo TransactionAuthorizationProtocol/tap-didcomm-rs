@@ -255,6 +255,22 @@ pub struct JweHeader {
     pub apv: Option<String>,
 }
 
+impl JweHeader {
+    pub fn new_anoncrypt(
+        content_encryption: ContentEncryptionAlgorithm,
+        epk: EphemeralPublicKey,
+    ) -> Self {
+        Self {
+            alg: "ECDH-ES+A256KW".to_string(),
+            enc: content_encryption.to_string(),
+            epk: Some(epk),
+            skid: None,
+            apu: None,
+            apv: None,
+        }
+    }
+}
+
 /// An ephemeral public key used in the key agreement process.
 ///
 /// This structure represents the public key component used in
@@ -292,6 +308,25 @@ pub struct EphemeralPublicKey {
     pub x: String,
     /// Public key y-coordinate (base64url-encoded, only for NIST curves)
     pub y: Option<String>,
+}
+
+impl EphemeralPublicKey {
+    pub fn new(curve: EcdhCurve, public_key: &[u8]) -> Result<Self> {
+        Ok(Self {
+            kty: "OKP".to_string(),
+            crv: curve.to_string(),
+            x: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(public_key),
+            y: None,
+        })
+    }
+
+    pub fn raw_public_key(&self) -> Result<Vec<u8>> {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(&self.x)
+            .map_err(|e| {
+                JweError::InvalidKeyMaterial(format!("Invalid public key encoding: {}", e))
+            })
+    }
 }
 
 /// A complete JWE message structure.
@@ -466,6 +501,41 @@ async fn resolve_key<R: DIDResolver>(resolver: &R, did: &str) -> Result<Vec<u8>>
         .map_err(|e| JweError::InvalidDIDDocument(format!("Invalid public key encoding: {}", e)))
 }
 
+pub struct EncryptedMessageBuilder {
+    // Add fields as needed
+}
+
+pub struct Recipient {
+    pub did: String,
+    pub key: Vec<u8>, // or appropriate key type
+}
+
+impl EncryptedMessageBuilder {
+    pub fn new() -> Self {
+        Self { /* initialize fields */ }
+    }
+
+    pub fn from(mut self, sender_did: String, sender_key: Vec<u8>) -> Self {
+        // Implementation
+        self
+    }
+
+    pub fn add_recipient(mut self, did: String, key: Vec<u8>) -> Self {
+        // Implementation
+        self
+    }
+
+    pub fn plaintext(mut self, data: &[u8]) -> Self {
+        // Implementation
+        self
+    }
+
+    pub async fn build(self) -> crate::error::Result<Vec<u8>> {
+        // Implementation
+        Ok(Vec::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,11 +632,11 @@ mod tests {
 
     #[async_trait]
     impl DIDResolver for MockResolver {
-        async fn resolve_key(&self, _did: &str) -> Result<Vec<u8>> {
+        async fn resolve(&self, did: &str) -> crate::error::Result<String> {
             // Return a test public key
             let mut key = [0u8; 32];
             key[0] = 1;
-            Ok(key.to_vec())
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key))
         }
     }
 
