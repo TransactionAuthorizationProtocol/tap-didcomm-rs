@@ -194,45 +194,36 @@ Always refer to the PRDs to understand the project and mark any tasks done when 
 
 ## Current Task: Fix tap-didcomm-core Critical Linter Errors
 
-### Current Focus
-1. Error Handling (Priority 1)
-   - [X] Fix duplicate From<serde_json::Error> implementation in JweError
-   - [X] Add proper error conversion for cryptographic errors
-   - [X] Implement proper error conversion between Error and JweError
-   - [X] Fix error propagation in algorithms.rs:
-     - [X] Fix KeyInit trait ambiguity
-     - [X] Fix EphemeralSecret API usage
-     - [X] Fix error conversion in key wrapping
-     - [X] Fix error conversion in content encryption
-     - [X] Fix type mismatches in AES-GCM operations
-     - [X] Fix HMAC initialization
+### Current Focus - Critical Linter Errors
 
-2. Trait Implementations (Priority 2)
-   - [ ] Add Display for ContentEncryptionAlgorithm
-   - [ ] Add Display for EcdhCurve
-   - [ ] Fix MockTestPlugin trait implementations
-   - [ ] Import base64::Engine trait for decode operations
+1. Fix Cryptographic Operations (Priority 1)
+   - [ ] Fix algorithms.rs:
+     - [ ] Fix HMAC trait ambiguity by specifying correct trait bounds
+     - [ ] Fix EphemeralSecret API usage for X25519
+     - [ ] Fix AES-GCM type mismatches with GenericArray
+     - [ ] Fix SecretKey initialization for NIST curves
+     - [ ] Fix type mismatches in encryption/decryption operations
+
+2. Fix Error Handling (Priority 2)
+   - [X] Fix error.rs:
+     - [X] Remove duplicate trait implementations using #[from]
+     - [X] Fix Base64 error variant to use structured fields
+     - [X] Fix error type hierarchy
+
+3. Fix Type System Issues (Priority 3)
+   - [ ] Fix type mismatches in jwe/mod.rs
+   - [ ] Fix ownership/move issues in pack.rs
+   - [ ] Fix trait implementations in plugin.rs
 
 Next steps:
-1. Implement Display traits for enums
-2. Fix MockTestPlugin implementations
-3. Add base64::Engine trait imports
+1. Fix HMAC initialization in algorithms.rs
+2. Fix EphemeralSecret and SecretKey APIs
+3. Fix AES-GCM type mismatches
 
-### Implementation Order
-1. Start with error.rs:
-   - Remove duplicate From implementations
-   - Add proper error conversions
-   - Fix error type hierarchy
-
-2. Fix trait implementations:
-   - Add Display impls in jwe/mod.rs
-   - Fix MockTestPlugin in plugin.rs
-   - Import missing traits
-
-3. Fix cryptographic operations:
-   - Update EphemeralSecret usage
-   - Fix key agreement implementations
-   - Resolve type mismatches
+### Strategy
+- Focus on cryptographic operations first as they affect other parts
+- Use proper type annotations to resolve trait ambiguity
+- Follow cryptographic library API documentation strictly
 
 ### Notes
 - Many errors are interconnected - fixing error handling first will resolve several other issues
