@@ -37,39 +37,38 @@ impl Signer for MockTestPlugin {
 
     async fn verify(&self, message: &[u8], signature: &[u8], _from: &str) -> Result<bool> {
         // For testing, verify that the signature is the base64 encoded message
-        let decoded = STANDARD.decode(signature)?;
+        let decoded = STANDARD
+            .decode(signature)
+            .map_err(|e| crate::Error::Base64(e.to_string()))?;
         Ok(message == decoded)
     }
 }
 
 #[async_trait]
 impl Encryptor for MockTestPlugin {
-    async fn encrypt(
-        &self,
-        message: &[u8],
-        _to: Vec<String>,
-        _from: Option<String>,
-    ) -> Result<Vec<u8>> {
+    async fn encrypt(&self, message: &[u8], _to: &[&str], _from: Option<&str>) -> Result<Vec<u8>> {
         // For testing, just base64 encode the message as mock encryption
         Ok(STANDARD.encode(message).into_bytes())
     }
 
-    async fn decrypt(&self, message: &[u8], _recipient: String) -> Result<Vec<u8>> {
+    async fn decrypt(&self, message: &[u8], _recipient: &str) -> Result<Vec<u8>> {
         // For testing, base64 decode the message as mock decryption
-        Ok(STANDARD.decode(message)?)
+        Ok(STANDARD
+            .decode(message)
+            .map_err(|e| crate::Error::Base64(e.to_string()))?)
     }
 }
 
 impl DIDCommPlugin for MockTestPlugin {
-    fn as_resolver(&self) -> &dyn DIDResolver {
+    fn resolver(&self) -> &dyn DIDResolver {
         self
     }
 
-    fn as_signer(&self) -> &dyn Signer {
+    fn signer(&self) -> &dyn Signer {
         self
     }
 
-    fn as_encryptor(&self) -> &dyn Encryptor {
+    fn encryptor(&self) -> &dyn Encryptor {
         self
     }
 }
@@ -84,13 +83,18 @@ mod tests {
         let plugin = Arc::new(MockTestPlugin);
 
         // Test DID resolution
-        let did_doc = plugin.resolve("did:example:test").await.unwrap();
+        let did_doc = plugin.resolver().resolve("did:example:test").await.unwrap();
         assert!(did_doc.contains("did:example:test"));
 
         // Test signing and verification
         let message = b"test message";
-        let signature = plugin.sign(message, "did:example:test").await.unwrap();
+        let signature = plugin
+            .signer()
+            .sign(message, "did:example:test")
+            .await
+            .unwrap();
         let verified = plugin
+            .signer()
             .verify(message, &signature, "did:example:test")
             .await
             .unwrap();
@@ -98,16 +102,18 @@ mod tests {
 
         // Test encryption and decryption
         let encrypted = plugin
+            .encryptor()
             .encrypt(
                 message,
-                vec!["did:example:recipient".to_string()],
-                Some("did:example:sender".to_string()),
+                &["did:example:recipient"],
+                Some("did:example:sender"),
             )
             .await
             .unwrap();
 
         let decrypted = plugin
-            .decrypt(&encrypted, "did:example:recipient".to_string())
+            .encryptor()
+            .decrypt(&encrypted, "did:example:recipient")
             .await
             .unwrap();
         assert_eq!(decrypted, message);
