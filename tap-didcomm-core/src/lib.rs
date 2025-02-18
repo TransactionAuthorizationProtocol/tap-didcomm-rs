@@ -24,14 +24,14 @@
 //! - `types`: Core type definitions
 //! - `error`: Error types and handling
 //! - `jwe`: JSON Web Encryption implementation
+//! - `prelude`: Commonly used types and traits
 //!
 //! # Examples
 //!
 //! ```rust,no_run
-//! use tap_didcomm_core::{Message, PackingType, DIDCommPlugin};
-//! use tap_didcomm_core::pack::{pack_message, unpack_message};
+//! use tap_didcomm_core::prelude::*;
 //!
-//! async fn example(plugin: &impl DIDCommPlugin) -> tap_didcomm_core::Result<()> {
+//! async fn example(plugin: &impl DIDCommPlugin) -> Result<()> {
 //!     // Create a message
 //!     let message = Message::new("Hello DIDComm!".to_string())
 //!         .from("did:example:alice")
@@ -84,6 +84,7 @@ pub mod error;
 pub mod jwe;
 pub mod pack;
 pub mod plugin;
+pub mod prelude;
 pub mod types;
 /// Utility functions for DID validation and other common operations
 pub mod utils;
@@ -91,9 +92,10 @@ pub mod utils;
 #[cfg(test)]
 pub(crate) mod tests;
 
+// Re-export commonly used types at the crate root
 pub use error::{Error, Result};
-pub use pack::{pack_message, unpack_message};
+pub use pack::{pack_message, unpack_message, Message};
 pub use plugin::{DIDCommPlugin, DIDResolver, Encryptor, Signer};
 pub use types::{
-    Attachment, AttachmentData, Header, Message, MessageId, MessageType, PackedMessage, PackingType,
+    Attachment, AttachmentData, Header, MessageId, MessageType, PackedMessage, PackingType,
 };

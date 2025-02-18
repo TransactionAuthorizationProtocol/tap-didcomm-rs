@@ -6,11 +6,10 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
-use crate::crypto::sign_message;
 use crate::error::{Error, Result};
 use crate::jwe::EncryptedMessageBuilder;
-use crate::jwe::{EcdhCurve, JweMessage};
 use crate::plugin::DIDCommPlugin;
 use crate::plugin::DIDCommPlugins;
 use crate::types::PackingType;
@@ -28,12 +27,17 @@ pub struct Recipient {
 /// A `DIDComm` message.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Message {
+    /// The unique identifier for this message
+    pub id: String,
+
     /// The message body as a JSON value
     pub body: Value,
+
     /// The sender DID (optional)
     pub from: Option<String>,
-    /// The recipient DIDs
-    pub to: Vec<String>,
+
+    /// The recipient DIDs (optional)
+    pub to: Option<Vec<String>>,
 }
 
 impl Message {
@@ -47,9 +51,10 @@ impl Message {
     #[must_use]
     pub fn new<T: Into<Value>>(body: T) -> Self {
         Message {
+            id: Uuid::new_v4().to_string(),
             body: body.into(),
             from: None,
-            to: Vec::new(),
+            to: None,
         }
     }
 
@@ -66,16 +71,16 @@ impl Message {
         self
     }
 
-    /// Adds a recipient DID.
+    /// Sets the recipients of the message.
     ///
     /// # Arguments
-    /// * `to` - The recipient's DID as a string reference
+    /// * `to` - The recipient DIDs as an iterator of string references
     ///
     /// # Returns
     /// The modified `Message` instance
     #[must_use]
-    pub fn to<S: AsRef<str>>(mut self, to: S) -> Self {
-        self.to.push(to.as_ref().to_string());
+    pub fn to<S: AsRef<str>>(mut self, to: impl IntoIterator<Item = S>) -> Self {
+        self.to = Some(to.into_iter().map(|s| s.as_ref().to_string()).collect());
         self
     }
 
@@ -124,15 +129,18 @@ pub async fn pack_message(
                 Error::InvalidDIDDocument("Sender DID required for authcrypt".into())
             })?;
             validate_did(from)?;
-            if message.to.is_empty() {
+            let recipients = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("At least one recipient required for authcrypt".into())
+            })?;
+            if recipients.is_empty() {
                 return Err(Error::InvalidDIDDocument(
                     "At least one recipient required for authcrypt".into(),
                 ));
             }
-            for did in &message.to {
+            for did in recipients {
                 validate_did(did)?;
             }
-            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
+            let to_refs: Vec<&str> = recipients.iter().map(String::as_str).collect();
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, Some(from))
@@ -140,15 +148,18 @@ pub async fn pack_message(
             Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
         }
         PackingType::AnonV2 => {
-            if message.to.is_empty() {
+            let recipients = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("At least one recipient required for anoncrypt".into())
+            })?;
+            if recipients.is_empty() {
                 return Err(Error::InvalidDIDDocument(
                     "At least one recipient required for anoncrypt".into(),
                 ));
             }
-            for did in &message.to {
+            for did in recipients {
                 validate_did(did)?;
             }
-            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
+            let to_refs: Vec<&str> = recipients.iter().map(String::as_str).collect();
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, None)
@@ -292,7 +303,7 @@ mod tests {
         let plugin = MockTestPlugin;
         let message = Message::new(json!("test"))
             .from("did:example:alice")
-            .to("did:example:bob");
+            .to(vec!["did:example:bob"]);
 
         let packed = pack_message(&message, &plugin, PackingType::Signed).await?;
         let unpacked =
@@ -307,7 +318,7 @@ mod tests {
         let plugin = MockTestPlugin;
         let message = Message::new(json!("test"))
             .from("did:example:alice")
-            .to("did:example:bob");
+            .to(vec!["did:example:bob"]);
 
         let packed = pack_message(&message, &plugin, PackingType::AuthcryptV2).await?;
         let unpacked =
