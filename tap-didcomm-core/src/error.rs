@@ -57,6 +57,10 @@ pub enum Error {
     #[error("Authentication failed")]
     AuthenticationFailed,
 
+    /// Base64 decoding error
+    #[error("Invalid base64: {0}")]
+    Base64(String),
+
     /// JSON serialization/deserialization error
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),

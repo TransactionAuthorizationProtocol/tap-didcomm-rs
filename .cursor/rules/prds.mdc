@@ -10,7 +10,7 @@ Always update this with the current PRD you are working on
 
 ## Current PRD
 
-- [X] [v1](../prds/v1.md)
-- [X] [actors](../prds/actors.md)
-- [ ] [encryption](../prds/encryption.md)
-- [ ] [typescript](../prds/typescript.md) 
+- [X] [v1](mdc:../prds/v1.md)
+- [X] [actors](mdc:../prds/actors.md)
+- [ ] [encryption](mdc:../prds/encryption.md)
+- [ ] [typescript](mdc:../prds/typescript.md) 

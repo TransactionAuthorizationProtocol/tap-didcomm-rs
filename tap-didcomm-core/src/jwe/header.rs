@@ -204,7 +204,6 @@ impl FromStr for JweHeader {
 mod tests {
     use super::*;
     use crate::jwe::algorithms::generate_ephemeral_keypair;
-    use serde_json::json;
 
     #[test]
     fn test_header_anoncrypt() {
