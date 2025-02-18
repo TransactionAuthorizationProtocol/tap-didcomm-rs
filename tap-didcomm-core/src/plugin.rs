@@ -102,7 +102,6 @@
 
 use crate::error::Result;
 use async_trait::async_trait;
-use ssi_dids::did_resolve::Content as DIDDocument;
 
 /// Resolves DIDs to DID Documents.
 #[async_trait]
