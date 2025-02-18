@@ -23,6 +23,29 @@ pub struct Message {
     pub to: Option<Vec<String>>,
 }
 
+impl Message {
+    /// Creates a new message with the given body.
+    pub fn new(body: impl Into<String>) -> Self {
+        let mut message = Self::default();
+        message.body = body.into().into();
+        message
+    }
+
+    /// Sets the sender of the message.
+    #[must_use]
+    pub fn from(mut self, from: impl Into<String>) -> Self {
+        self.from = Some(from.into());
+        self
+    }
+
+    /// Sets the recipients of the message.
+    #[must_use]
+    pub fn to(mut self, to: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.to = Some(to.into_iter().map(Into::into).collect());
+        self
+    }
+}
+
 /// Pack a `DIDComm` message using the specified packing type.
 ///
 /// # Errors
@@ -143,6 +166,24 @@ pub async fn unpack_message(
     Err(Error::InvalidDIDDocument("Unable to unpack message".into()))
 }
 
+/// Packs a message with encryption for multiple recipients.
+///
+/// # Arguments
+/// * `plaintext` - The message data to encrypt
+/// * `to` - List of recipient DIDs
+/// * `from` - Optional sender DID for authenticated encryption
+/// * `sign_by` - Optional DID to sign the message with
+/// * `plugins` - Plugin implementations for cryptographic operations
+///
+/// # Returns
+/// The encrypted message bytes
+///
+/// # Errors
+/// Returns an error if:
+/// - DID validation fails
+/// - Key resolution fails
+/// - Encryption fails
+/// - Signing fails (if requested)
 pub async fn pack_encrypted<'a>(
     plaintext: &[u8],
     to: &[String],

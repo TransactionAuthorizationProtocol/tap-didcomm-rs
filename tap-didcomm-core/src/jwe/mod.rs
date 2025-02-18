@@ -339,7 +339,7 @@ impl JweMessage {
 /// Resolves a key from a DID Document
 async fn resolve_key<R: DIDResolver>(resolver: &R, did: &str) -> Result<Vec<u8>> {
     let did_doc = resolver.resolve(did).await?;
-    let doc: Value = serde_json::from_str(&did_doc)?;
+    let doc: Value = serde_json::from_str(&did_doc).map_err(|e| Error::Json(e))?;
 
     // Extract verification method from DID Document
     let vm = doc["verificationMethod"]
@@ -355,7 +355,7 @@ async fn resolve_key<R: DIDResolver>(resolver: &R, did: &str) -> Result<Vec<u8>>
 
     URL_SAFE_NO_PAD
         .decode(public_key_base64)
-        .map_err(|e| Error::InvalidDIDDocument(format!("Invalid public key encoding: {}", e)))
+        .map_err(|e| Error::Base64(e.to_string()))
 }
 
 /// Builder for creating encrypted messages with multiple recipients.

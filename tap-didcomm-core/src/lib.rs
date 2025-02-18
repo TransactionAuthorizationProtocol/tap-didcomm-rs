@@ -75,6 +75,7 @@ pub mod jwe;
 pub mod pack;
 pub mod plugin;
 pub mod types;
+/// Utility functions for DID validation and other common operations
 pub mod utils;
 
 #[cfg(test)]

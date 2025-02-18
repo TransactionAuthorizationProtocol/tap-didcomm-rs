@@ -193,9 +193,38 @@ pub trait DIDCommPlugin: Send + Sync {
     fn encryptor(&self) -> &dyn Encryptor;
 }
 
+/// A collection of DIDComm plugin implementations.
+///
+/// This trait provides access to DID resolution and signing operations
+/// needed for DIDComm message handling.
 #[async_trait::async_trait]
 pub trait DIDCommPlugins {
+    /// Resolves a DID to its associated key material.
+    ///
+    /// # Arguments
+    /// * `did` - The DID to resolve
+    ///
+    /// # Returns
+    /// The key bytes associated with the DID
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - DID resolution fails
+    /// - Key extraction fails
     async fn resolve_did(&self, did: &str) -> crate::error::Result<Vec<u8>>;
+
+    /// Gets a signer implementation for a specific DID.
+    ///
+    /// # Arguments
+    /// * `did` - The DID to get a signer for
+    ///
+    /// # Returns
+    /// A boxed signer implementation
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - DID is invalid
+    /// - No signer is available for the DID
     async fn get_signer(&self, did: &str) -> crate::error::Result<Box<dyn Signer>>;
 }
 
