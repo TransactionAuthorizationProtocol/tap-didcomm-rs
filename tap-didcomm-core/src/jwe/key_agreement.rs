@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::error::{JweError, Result};
+use super::error::{Error, Result};
 
 /// Key agreement algorithms supported by JWE.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,12 +47,12 @@ pub fn derive_key_encryption_key_es(
     // Validate APU/APV lengths if present
     if let Some(apu) = apu {
         if apu.len() > 512 {
-            return Err(JweError::InvalidKeyMaterial("APU too long (max 512 bytes)".to_string()));
+            return Err(Error::InvalidKeyMaterial("APU too long (max 512 bytes)".to_string()));
         }
     }
     if let Some(apv) = apv {
         if apv.len() > 512 {
-            return Err(JweError::InvalidKeyMaterial("APV too long (max 512 bytes)".to_string()));
+            return Err(Error::InvalidKeyMaterial("APV too long (max 512 bytes)".to_string()));
         }
     }
 
@@ -84,7 +84,7 @@ pub fn derive_key_encryption_key_es(
     let mut okm = [0u8; 32];
     hkdf::Hkdf::<sha2::Sha256>::new(None, shared_secret)
         .expand(&info, &mut okm)
-        .map_err(|_| JweError::KeyDerivation("Failed to derive key encryption key".to_string()))?;
+        .map_err(|_| Error::KeyDerivation("Failed to derive key encryption key".to_string()))?;
 
     Ok(KeyEncryptionKey::new(okm.to_vec()))
 }
@@ -99,12 +99,12 @@ pub fn derive_key_encryption_key_1pu(
     // Validate APU/APV lengths if present
     if let Some(apu) = apu {
         if apu.len() > 512 {
-            return Err(JweError::InvalidKeyMaterial("APU too long (max 512 bytes)".to_string()));
+            return Err(Error::InvalidKeyMaterial("APU too long (max 512 bytes)".to_string()));
         }
     }
     if let Some(apv) = apv {
         if apv.len() > 512 {
-            return Err(JweError::InvalidKeyMaterial("APV too long (max 512 bytes)".to_string()));
+            return Err(Error::InvalidKeyMaterial("APV too long (max 512 bytes)".to_string()));
         }
     }
 
@@ -141,7 +141,7 @@ pub fn derive_key_encryption_key_1pu(
     let mut okm = [0u8; 32];
     hkdf::Hkdf::<sha2::Sha256>::new(None, &ikm)
         .expand(&info, &mut okm)
-        .map_err(|_| JweError::KeyDerivation("Failed to derive key encryption key".to_string()))?;
+        .map_err(|_| Error::KeyDerivation("Failed to derive key encryption key".to_string()))?;
 
     Ok(KeyEncryptionKey::new(okm.to_vec()))
 }

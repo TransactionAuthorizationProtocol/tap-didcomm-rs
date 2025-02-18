@@ -14,42 +14,30 @@
 //! - Nonce reuse is prevented by using random nonces
 //! - Authentication tags are validated in constant time
 
-use aes::{
-    cipher::{BlockDecrypt, BlockEncrypt},
-    Aes256,
-};
+use aes::Aes256;
 use aes_gcm::{
     aead::{Aead, KeyInit as GcmKeyInit},
     Aes256Gcm, Key, Nonce,
 };
 use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey};
 use hkdf::Hkdf;
-use hmac::{digest::KeyInit as HmacKeyInit, Hmac, Mac};
-use p256::EncodedPoint as P256EncodedPoint;
-use p256::{
-    ecdh::{diffie_hellman, EphemeralSecret as P256EphemeralSecret},
-    PublicKey as P256PublicKey, SecretKey as P256SecretKey,
-};
-use p384::EncodedPoint as P384EncodedPoint;
+use hmac::{Hmac, Mac, digest::KeyInit};
+use p256::{ecdh::diffie_hellman, PublicKey as P256PublicKey, SecretKey as P256SecretKey};
+
 use p384::{
     ecdh::{diffie_hellman as p384_diffie_hellman, EphemeralSecret as P384EphemeralSecret},
     PublicKey as P384PublicKey, SecretKey as P384SecretKey,
 };
 use p521::elliptic_curve;
-use p521::EncodedPoint as P521EncodedPoint;
 use p521::{
-    ecdh::{diffie_hellman as p521_diffie_hellman, EphemeralSecret as P521EphemeralSecret},
+    ecdh::{diffie_hellman as p521_diffie_hellman},
     PublicKey as P521PublicKey, SecretKey as P521SecretKey,
 };
 use rand_core::{OsRng, RngCore};
 use sha2::Sha512;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
-use zeroize::Zeroizing;
-
-use super::{
-    error::{JweError, Result},
-    ContentEncryptionAlgorithm, EcdhCurve, EncryptionKey,
-};
+use crate::error::{Error,Result}
+use super::EcdhCurve;
 
 use aes::cipher::{generic_array::GenericArray, KeyInit as AesKeyInit};
 use elliptic_curve::sec1::ToEncodedPoint;
@@ -142,13 +130,13 @@ fn x25519_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>
     let secret = StaticSecret::from(
         private_key
             .try_into()
-            .map_err(|_| JweError::InvalidKeyMaterial("Invalid private key length".to_string()))?,
+            .map_err(|_| Error::InvalidKeyMaterial("Invalid private key length".to_string()))?,
     );
 
     let public = PublicKey::from(
         public_key
             .try_into()
-            .map_err(|_| JweError::InvalidKeyMaterial("Invalid public key length".to_string()))?,
+            .map_err(|_| Error::InvalidKeyMaterial("Invalid public key length".to_string()))?,
     );
 
     Ok(secret.diffie_hellman(&public).as_bytes().to_vec())
@@ -187,7 +175,7 @@ pub fn derive_key(
     let hk = Hkdf::<Sha512>::new(Some(salt), shared_secret);
     let mut okm = vec![0u8; length];
     hk.expand(info, &mut okm)
-        .map_err(|e| JweError::KeyAgreement(format!("HKDF error: {}", e)))?;
+        .map_err(|e| Error::KeyAgreement(format!("HKDF error: {}", e)))?;
     Ok(okm)
 }
 
@@ -196,7 +184,7 @@ pub fn wrap_key(kek: &[u8], cek: &[u8]) -> Result<Vec<u8>> {
     use aes_kw::KekAes256;
 
     if kek.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "Key encryption key must be 32 bytes".to_string(),
         ));
     }
@@ -207,14 +195,13 @@ pub fn wrap_key(kek: &[u8], cek: &[u8]) -> Result<Vec<u8>> {
     let mut wrapped = vec![0u8; cek.len() + 8];
     cipher
         .wrap_with_padding(cek, &mut wrapped)
-        .map_err(|_| JweError::KeyWrap("Key wrapping failed".to_string()))?;
+        .map_err(|_| Error::KeyWrap("Key wrapping failed".to_string()))?;
 
     Ok(wrapped)
 }
 
 /// Unwraps a wrapped key using AES key unwrapping
 pub fn unwrap_key(kek: &[u8], wrapped: &[u8]) -> Result<Vec<u8>> {
-    use aes::Aes256;
     use aes_kw::KekAes256;
 
     let kek_array = GenericArray::from_slice(kek);
@@ -223,7 +210,7 @@ pub fn unwrap_key(kek: &[u8], wrapped: &[u8]) -> Result<Vec<u8>> {
     let mut unwrapped = vec![0u8; wrapped.len() - 8];
     cipher
         .unwrap_with_padding(wrapped, &mut unwrapped)
-        .map_err(|e| JweError::KeyWrap(format!("Key unwrapping failed: {}", e)))?;
+        .map_err(|e| Error::KeyWrap(format!("Key unwrapping failed: {}", e)))?;
 
     Ok(unwrapped)
 }
@@ -246,34 +233,18 @@ pub fn unwrap_key(kek: &[u8], wrapped: &[u8]) -> Result<Vec<u8>> {
 /// Returns an error if:
 /// - The key or nonce length is invalid
 /// - Encryption fails
-pub fn encrypt_aes_gcm(
-    key: &[u8],
-    nonce: &[u8],
-    aad: &[u8],
-    plaintext: &[u8],
-) -> Result<(Vec<u8>, Vec<u8>)> {
-    if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "AES-256-GCM requires a 32-byte key".to_string(),
-        ));
-    }
-    if nonce.len() != 12 {
-        return Err(JweError::InvalidKeyMaterial(
-            "AES-256-GCM requires a 12-byte nonce".to_string(),
-        ));
-    }
-
+fn encrypt_aes_gcm(key: &[u8], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>)> {
     let key = Key::<Aes256Gcm>::from_slice(key);
-    let nonce = Nonce::from_slice(nonce);
+    let nonce = Nonce::<Aes256Gcm>::from_slice(nonce);
     let cipher = Aes256Gcm::new(key);
 
-    let mut ciphertext = cipher
-        .encrypt(nonce, plaintext)
-        .map_err(|e| JweError::ContentEncryption(format!("AES-GCM encryption failed: {}", e)))?;
+    let ciphertext = cipher.encrypt(nonce, plaintext)
+        .map_err(|e| Error::ContentEncryption(format!("AES-GCM encryption failed: {}", e)))?;
 
+    // Split ciphertext and tag
     let tag_start = ciphertext.len() - 16;
     let tag = ciphertext[tag_start..].to_vec();
-    ciphertext.truncate(tag_start);
+    let ciphertext = ciphertext[..tag_start].to_vec();
 
     Ok((ciphertext, tag))
 }
@@ -306,17 +277,17 @@ pub fn decrypt_aes_gcm(
     tag: &[u8],
 ) -> Result<Vec<u8>> {
     if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "AES-256-GCM requires a 32-byte key".to_string(),
         ));
     }
     if nonce.len() != 12 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "AES-256-GCM requires a 12-byte nonce".to_string(),
         ));
     }
     if tag.len() != 16 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "AES-256-GCM requires a 16-byte authentication tag".to_string(),
         ));
     }
@@ -330,7 +301,7 @@ pub fn decrypt_aes_gcm(
 
     cipher
         .decrypt(nonce, ciphertext_with_tag.as_ref())
-        .map_err(|e| JweError::ContentEncryption(format!("AES-GCM decryption failed: {}", e)))
+        .map_err(|e| Error::ContentEncryption(format!("AES-GCM decryption failed: {}", e)))
 }
 
 /// Encrypts data using XChaCha20-Poly1305.
@@ -358,24 +329,22 @@ pub fn encrypt_xchacha20poly1305(
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>)> {
     if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid key length".to_string(),
-        ));
+        return Err(Error::InvalidKeyMaterial("Invalid key length".to_string()));
     }
     if nonce.len() != 24 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "Invalid nonce length".to_string(),
         ));
     }
 
     let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))?;
+        .map_err(|e| Error::ContentEncryption(e.to_string()))?;
 
     let nonce = ChaChaKey::from_slice(nonce);
 
     cipher
         .encrypt(nonce, plaintext.as_ref())
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))
+        .map_err(|e| Error::ContentEncryption(e.to_string()))
         .map(|ciphertext| {
             let tag = ciphertext[ciphertext.len() - 16..].to_vec();
             let ciphertext = ciphertext[..ciphertext.len() - 16].to_vec();
@@ -411,23 +380,21 @@ pub fn decrypt_xchacha20poly1305(
     tag: &[u8],
 ) -> Result<Vec<u8>> {
     if key.len() != 32 {
-        return Err(JweError::InvalidKeyMaterial(
-            "Invalid key length".to_string(),
-        ));
+        return Err(Error::InvalidKeyMaterial("Invalid key length".to_string()));
     }
     if nonce.len() != 24 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "Invalid nonce length".to_string(),
         ));
     }
     if tag.len() != 16 {
-        return Err(JweError::InvalidKeyMaterial(
+        return Err(Error::InvalidKeyMaterial(
             "Invalid authentication tag length".to_string(),
         ));
     }
 
     let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))?;
+        .map_err(|e| Error::ContentEncryption(e.to_string()))?;
 
     let nonce = ChaChaKey::from_slice(nonce);
 
@@ -437,7 +404,7 @@ pub fn decrypt_xchacha20poly1305(
 
     cipher
         .decrypt(nonce, ciphertext_with_tag.as_ref())
-        .map_err(|e| JweError::ContentEncryption(e.to_string()))
+        .map_err(|e| Error::ContentEncryption(e.to_string()))
 }
 
 /// Encrypts content using AES-CBC with HMAC-SHA-512
@@ -453,8 +420,8 @@ pub fn encrypt_aes_cbc_hmac(
     let (mac_key, enc_key) = key.split_at(key.len() / 2);
 
     // Create HMAC instance with explicit type
-    let mut mac = <Hmac<Sha512>>::new_from_slice(mac_key)
-        .map_err(|e| JweError::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
+    let mut mac = Hmac::<Sha512>::new_from_slice(mac_key)
+        .map_err(|e| Error::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
 
     // Encrypt the content
     let enc_key_array = GenericArray::from_slice(enc_key);
@@ -509,13 +476,13 @@ pub fn decrypt_aes_cbc_hmac(
 
     // Create HMAC instance with explicit type
     let mut mac = <Hmac<Sha512>>::new_from_slice(mac_key)
-        .map_err(|e| JweError::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
+        .map_err(|e| Error::ContentEncryption(format!("HMAC initialization failed: {}", e)))?;
 
     // Verify the tag
     mac.update(aad);
     mac.update(ciphertext);
     mac.verify_slice(tag)
-        .map_err(|_| JweError::AuthenticationFailed)?;
+        .map_err(|_| Error::AuthenticationFailed)?;
 
     // Decrypt the content
     let enc_key_array = GenericArray::from_slice(enc_key);
@@ -551,11 +518,10 @@ pub fn decrypt_aes_cbc_hmac(
 
 /// Performs P-256 key agreement
 fn p256_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = P256SecretKey::from_be_bytes(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-256 private key: {}", e)))?;
-
+    let secret = P256SecretKey::from_slice(private_key)
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-256 private key: {}", e)))?;
     let public = P256PublicKey::from_sec1_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-256 public key: {}", e)))?;
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-256 public key: {}", e)))?;
 
     let shared = diffie_hellman(&secret, &public);
     Ok(shared.raw_secret_bytes().to_vec())
@@ -574,11 +540,11 @@ fn generate_p256_ephemeral() -> Result<(Vec<u8>, Vec<u8>)> {
 
 /// Performs P-384 key agreement
 fn p384_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = P384SecretKey::from_be_bytes(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-384 private key: {}", e)))?;
+    let secret = P384SecretKey::from_slice(private_key)
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-384 private key: {}", e)))?;
 
     let public = P384PublicKey::from_sec1_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-384 public key: {}", e)))?;
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-384 public key: {}", e)))?;
 
     let shared = p384_diffie_hellman(&secret, &public);
     Ok(shared.raw_secret_bytes().to_vec())
@@ -597,11 +563,11 @@ fn generate_p384_ephemeral() -> Result<(Vec<u8>, Vec<u8>)> {
 
 /// Performs P-521 key agreement
 fn p521_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>> {
-    let secret = P521SecretKey::from_be_bytes(private_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-521 private key: {}", e)))?;
+    let secret = P521SecretKey::from_slice(private_key)
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-521 private key: {}", e)))?;
 
     let public = P521PublicKey::from_sec1_bytes(public_key)
-        .map_err(|e| JweError::InvalidKeyMaterial(format!("Invalid P-521 public key: {}", e)))?;
+        .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid P-521 public key: {}", e)))?;
 
     let shared = p521_diffie_hellman(&secret, &public);
     Ok(shared.raw_secret_bytes().to_vec())
@@ -638,21 +604,18 @@ pub fn compress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<u8
     match curve {
         EcdhCurve::X25519 => Ok(public_key.to_vec()), // X25519 is already compressed
         EcdhCurve::P256 => {
-            let point = P256PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-256 public key".to_string())
-            })?;
+            let point = P256PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-256 public key".to_string()))?;
             Ok(point.to_encoded_point(true).as_bytes().to_vec())
         }
         EcdhCurve::P384 => {
-            let point = P384PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-384 public key".to_string())
-            })?;
+            let point = P384PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-384 public key".to_string()))?;
             Ok(point.to_encoded_point(true).as_bytes().to_vec())
         }
         EcdhCurve::P521 => {
-            let point = P521PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-521 public key".to_string())
-            })?;
+            let point = P521PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-521 public key".to_string()))?;
             Ok(point.to_encoded_point(true).as_bytes().to_vec())
         }
     }
@@ -678,21 +641,18 @@ pub fn decompress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<
     match curve {
         EcdhCurve::X25519 => Ok(public_key.to_vec()), // X25519 is already compressed
         EcdhCurve::P256 => {
-            let point = P256PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-256 public key".to_string())
-            })?;
+            let point = P256PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-256 public key".to_string()))?;
             Ok(point.to_encoded_point(false).as_bytes().to_vec())
         }
         EcdhCurve::P384 => {
-            let point = P384PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-384 public key".to_string())
-            })?;
+            let point = P384PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-384 public key".to_string()))?;
             Ok(point.to_encoded_point(false).as_bytes().to_vec())
         }
         EcdhCurve::P521 => {
-            let point = P521PublicKey::from_sec1_bytes(public_key).map_err(|_| {
-                JweError::InvalidKeyMaterial("Invalid P-521 public key".to_string())
-            })?;
+            let point = P521PublicKey::from_sec1_bytes(public_key)
+                .map_err(|_| Error::InvalidKeyMaterial("Invalid P-521 public key".to_string()))?;
             Ok(point.to_encoded_point(false).as_bytes().to_vec())
         }
     }
@@ -700,19 +660,20 @@ pub fn decompress_public_key(curve: EcdhCurve, public_key: &[u8]) -> Result<Vec<
 
 /// Creates HMAC instance with explicit type annotation
 fn create_hmac(key: &[u8]) -> Result<Hmac<Sha512>> {
-    Hmac::<Sha512>::new_from_slice(key)
-        .map_err(|e| JweError::ContentEncryption(format!("HMAC initialization failed: {}", e)))
+    let hmac = Hmac::<Sha512>::new_from_slice(key)
+        .map_err(|e| Error::ContentEncryption(format!("HMAC initialization failed: {}", e)));
+    Ok(hmac)
 }
 
 /// Validates PKCS7 padding
 fn validate_pkcs7_padding(plaintext: &mut Vec<u8>) -> Result<()> {
     if plaintext.is_empty() {
-        return Err(JweError::ContentEncryption("Empty plaintext".to_string()));
+        return Err(Error::ContentEncryption("Empty plaintext".to_string()));
     }
 
     let padding_len = plaintext[plaintext.len() - 1] as usize;
     if padding_len == 0 || padding_len > 16 {
-        return Err(JweError::ContentEncryption(
+        return Err(Error::ContentEncryption(
             "Invalid padding length".to_string(),
         ));
     }
@@ -720,7 +681,7 @@ fn validate_pkcs7_padding(plaintext: &mut Vec<u8>) -> Result<()> {
     let start = plaintext.len() - padding_len;
     for &byte in &plaintext[start..] {
         if byte != padding_len as u8 {
-            return Err(JweError::ContentEncryption("Invalid padding".to_string()));
+            return Err(Error::ContentEncryption("Invalid padding".to_string()));
         }
     }
 
@@ -836,7 +797,7 @@ mod tests {
         // Attempt to decrypt
         let result = decrypt_aes_cbc_hmac(&key, &iv, aad, &ciphertext, &tag);
         assert!(result.is_err());
-        assert!(matches!(result, Err(JweError::AuthenticationFailed)));
+        assert!(matches!(result, Err(Error::AuthenticationFailed)));
     }
 
     #[test]

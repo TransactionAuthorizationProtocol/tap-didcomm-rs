@@ -9,9 +9,9 @@ use super::{
         ecdh_key_agreement, encrypt_aes_cbc_hmac, encrypt_aes_gcm, encrypt_xchacha20poly1305,
         generate_ephemeral_keypair, generate_random_key,
     },
-    error::{JweError, Result},
+    error::{Error, Result},
     header::{EphemeralPublicKey, JweHeader},
-    key_agreement::{derive_key_encryption_key_es, derive_key_encryption_key_1pu},
+    key_agreement::{derive_key_encryption_key_1pu, derive_key_encryption_key_es},
     key_wrapping::{wrap_key, ContentEncryptionKey},
     ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm,
 };
@@ -71,7 +71,8 @@ impl JweMessage {
             let protected = header.to_string()?;
 
             // Derive shared secret
-            let shared_secret = ecdh_key_agreement(*curve, &ephemeral_private, recipient_public_key)?;
+            let shared_secret =
+                ecdh_key_agreement(*curve, &ephemeral_private, recipient_public_key)?;
 
             // Derive key encryption key
             let kek = derive_key_encryption_key_es(&shared_secret, None, None)?;
@@ -86,7 +87,8 @@ impl JweMessage {
         }
 
         // Create protected header for first recipient (all use the same)
-        let (ephemeral_private, ephemeral_public) = generate_ephemeral_keypair(recipient_keys[0].1)?;
+        let (ephemeral_private, ephemeral_public) =
+            generate_ephemeral_keypair(recipient_keys[0].1)?;
         let epk = EphemeralPublicKey::new(recipient_keys[0].1, &ephemeral_public)?;
         let header = JweHeader::new_anoncrypt(content_encryption, epk);
         let protected = header.to_string()?;
@@ -142,19 +144,17 @@ impl JweMessage {
             let epk = EphemeralPublicKey::new(*curve, &ephemeral_public)?;
 
             // Create protected header
-            let header = JweHeader::new_authcrypt(
-                content_encryption,
-                epk,
-                sender_did.to_string(),
-                None,
-            );
+            let header =
+                JweHeader::new_authcrypt(content_encryption, epk, sender_did.to_string(), None);
             let protected = header.to_string()?;
 
             // Derive sender shared secret
-            let sender_shared = ecdh_key_agreement(*curve, sender_private_key, recipient_public_key)?;
+            let sender_shared =
+                ecdh_key_agreement(*curve, sender_private_key, recipient_public_key)?;
 
             // Derive recipient shared secret
-            let recipient_shared = ecdh_key_agreement(*curve, &ephemeral_private, recipient_public_key)?;
+            let recipient_shared =
+                ecdh_key_agreement(*curve, &ephemeral_private, recipient_public_key)?;
 
             // Derive key encryption key
             let kek = derive_key_encryption_key_1pu(&sender_shared, &recipient_shared, None, None)?;
@@ -169,14 +169,11 @@ impl JweMessage {
         }
 
         // Create protected header for first recipient (all use the same)
-        let (ephemeral_private, ephemeral_public) = generate_ephemeral_keypair(recipient_keys[0].1)?;
+        let (ephemeral_private, ephemeral_public) =
+            generate_ephemeral_keypair(recipient_keys[0].1)?;
         let epk = EphemeralPublicKey::new(recipient_keys[0].1, &ephemeral_public)?;
-        let header = JweHeader::new_authcrypt(
-            content_encryption,
-            epk,
-            sender_did.to_string(),
-            None,
-        );
+        let header =
+            JweHeader::new_authcrypt(content_encryption, epk, sender_did.to_string(), None);
         let protected = header.to_string()?;
 
         // Encrypt content
@@ -208,27 +205,32 @@ impl JweMessage {
         sender_public_key: Option<&[u8]>,
     ) -> Result<Vec<u8>> {
         // Decode protected header
-        let protected = URL_SAFE_NO_PAD.decode(&self.protected)
-            .map_err(|_| JweError::InvalidBase64)?;
-        let header: JweHeader = serde_json::from_slice(&protected)
-            .map_err(|_| JweError::InvalidHeader)?;
+        let protected = URL_SAFE_NO_PAD
+            .decode(&self.protected)
+            .map_err(|_| Error::InvalidBase64)?;
+        let header: JweHeader =
+            serde_json::from_slice(&protected).map_err(|_| Error::InvalidHeader)?;
 
         // Get curve from EPK
-        let curve = header.epk.as_ref()
-            .ok_or_else(|| JweError::InvalidHeader("Missing EPK".to_string()))?
+        let curve = header
+            .epk
+            .as_ref()
+            .ok_or_else(|| Error::InvalidHeader("Missing EPK".to_string()))?
             .curve();
 
         // Try each recipient until we find one that works
         let mut last_error = None;
         for recipient in &self.recipients {
-            let result = self.try_decrypt_recipient(
-                recipient,
-                &header,
-                curve,
-                recipient_private_key,
-                sender_public_key,
-                &protected,
-            ).await;
+            let result = self
+                .try_decrypt_recipient(
+                    recipient,
+                    &header,
+                    curve,
+                    recipient_private_key,
+                    sender_public_key,
+                    &protected,
+                )
+                .await;
 
             match result {
                 Ok(plaintext) => return Ok(plaintext),
@@ -236,7 +238,7 @@ impl JweMessage {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| JweError::Decryption("No valid recipient found".to_string())))
+        Err(last_error.unwrap_or_else(|| Error::Decryption("No valid recipient found".to_string())))
     }
 
     async fn try_decrypt_recipient(
@@ -249,18 +251,24 @@ impl JweMessage {
         protected: &[u8],
     ) -> Result<Vec<u8>> {
         // Decode fields
-        let encrypted_key = URL_SAFE_NO_PAD.decode(&recipient.encrypted_key)
-            .map_err(|_| JweError::InvalidBase64)?;
-        let iv = URL_SAFE_NO_PAD.decode(&self.iv)
-            .map_err(|_| JweError::InvalidBase64)?;
-        let ciphertext = URL_SAFE_NO_PAD.decode(&self.ciphertext)
-            .map_err(|_| JweError::InvalidBase64)?;
-        let tag = URL_SAFE_NO_PAD.decode(&self.tag)
-            .map_err(|_| JweError::InvalidBase64)?;
+        let encrypted_key = URL_SAFE_NO_PAD
+            .decode(&recipient.encrypted_key)
+            .map_err(|_| Error::InvalidBase64)?;
+        let iv = URL_SAFE_NO_PAD
+            .decode(&self.iv)
+            .map_err(|_| Error::InvalidBase64)?;
+        let ciphertext = URL_SAFE_NO_PAD
+            .decode(&self.ciphertext)
+            .map_err(|_| Error::InvalidBase64)?;
+        let tag = URL_SAFE_NO_PAD
+            .decode(&self.tag)
+            .map_err(|_| Error::InvalidBase64)?;
 
         // Get ephemeral public key
-        let epk_bytes = header.epk.as_ref()
-            .ok_or_else(|| JweError::InvalidHeader("Missing EPK".to_string()))?
+        let epk_bytes = header
+            .epk
+            .as_ref()
+            .ok_or_else(|| Error::InvalidHeader("Missing EPK".to_string()))?
             .raw_public_key()?;
 
         // Derive key encryption key based on algorithm
@@ -272,13 +280,14 @@ impl JweMessage {
             }
             KeyAgreementAlgorithm::Ecdh1puA256kw => {
                 // Verify sender public key is provided
-                let sender_pk = sender_public_key.ok_or(JweError::MissingSenderKey)?;
+                let sender_pk = sender_public_key.ok_or(Error::MissingSenderKey)?;
 
                 // Derive sender shared secret
                 let sender_shared = ecdh_key_agreement(curve, recipient_private_key, sender_pk)?;
 
                 // Derive recipient shared secret
-                let recipient_shared = ecdh_key_agreement(curve, recipient_private_key, &epk_bytes)?;
+                let recipient_shared =
+                    ecdh_key_agreement(curve, recipient_private_key, &epk_bytes)?;
 
                 derive_key_encryption_key_1pu(&sender_shared, &recipient_shared, None, None)?
             }
@@ -312,8 +321,10 @@ mod tests {
     #[test]
     fn test_jwe_anoncrypt_multiple_recipients() {
         let plaintext = b"test message";
-        let (recipient1_private, recipient1_public) = generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
-        let (recipient2_private, recipient2_public) = generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
+        let (recipient1_private, recipient1_public) =
+            generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
+        let (recipient2_private, recipient2_public) =
+            generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
 
         let recipient_keys = vec![
             (&recipient1_public[..], EcdhCurve::X25519),
@@ -325,7 +336,8 @@ mod tests {
             plaintext,
             &recipient_keys,
             ContentEncryptionAlgorithm::A256Gcm,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify structure
         assert_eq!(message.recipients.len(), 2);
@@ -346,9 +358,12 @@ mod tests {
     #[test]
     fn test_jwe_authcrypt_multiple_recipients() {
         let plaintext = b"test message";
-        let (sender_private, sender_public) = generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
-        let (recipient1_private, recipient1_public) = generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
-        let (recipient2_private, recipient2_public) = generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
+        let (sender_private, sender_public) =
+            generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
+        let (recipient1_private, recipient1_public) =
+            generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
+        let (recipient2_private, recipient2_public) =
+            generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
 
         let recipient_keys = vec![
             (&recipient1_public[..], EcdhCurve::X25519),
@@ -363,7 +378,8 @@ mod tests {
             &recipient_keys,
             EcdhCurve::X25519,
             ContentEncryptionAlgorithm::A256Gcm,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify structure
         assert_eq!(message.recipients.len(), 2);
@@ -373,19 +389,25 @@ mod tests {
         assert!(!message.tag.is_empty());
 
         // Decrypt with first recipient
-        let decrypted1 = message.decrypt(&recipient1_private, Some(&sender_public)).unwrap();
+        let decrypted1 = message
+            .decrypt(&recipient1_private, Some(&sender_public))
+            .unwrap();
         assert_eq!(decrypted1, plaintext);
 
         // Decrypt with second recipient
-        let decrypted2 = message.decrypt(&recipient2_private, Some(&sender_public)).unwrap();
+        let decrypted2 = message
+            .decrypt(&recipient2_private, Some(&sender_public))
+            .unwrap();
         assert_eq!(decrypted2, plaintext);
     }
 
     #[test]
     fn test_jwe_decrypt_wrong_recipient() {
         let plaintext = b"test message";
-        let (recipient1_private, recipient1_public) = generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
-        let (recipient2_private, recipient2_public) = generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
+        let (recipient1_private, recipient1_public) =
+            generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
+        let (recipient2_private, recipient2_public) =
+            generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
         let (wrong_private, _) = generate_ephemeral_keypair(EcdhCurve::X25519).unwrap();
 
         let recipient_keys = vec![
@@ -398,7 +420,8 @@ mod tests {
             plaintext,
             &recipient_keys,
             ContentEncryptionAlgorithm::A256Gcm,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Try to decrypt with wrong key
         let result = message.decrypt(&wrong_private, None);
@@ -415,7 +438,8 @@ mod tests {
         // Base64url-encoded values from the RFC
         let expected_protected = "eyJhbGciOiJSU0ExXzUiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0";
         let expected_iv = "48V1_ALb6US04U3b";
-        let expected_ciphertext = "5eym8TW_c8SuK0ltJ3rpYIzOeDQz7TALvtu6UG9oMo4vpzs9tX_EFShS8iB7j6jiSdiwkIr3ajwQzaBtQD_A";
+        let expected_ciphertext =
+            "5eym8TW_c8SuK0ltJ3rpYIzOeDQz7TALvtu6UG9oMo4vpzs9tX_EFShS8iB7j6jiSdiwkIr3ajwQzaBtQD_A";
         let expected_tag = "XFBoMYUZodetZdvTiFvSkQ";
 
         // Verify our base64url encoding matches the RFC
@@ -461,7 +485,8 @@ mod tests {
         let expected_protected = "eyJhbGciOiJFQ0RILUVTK0EyNTZLVyIsImVuYyI6IkEyNTZHQ00iLCJlcGsiOnsia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsIngiOiJnSTBHQUlMQmR1N1Q1M2FrckZtTXlHY3NGM241ZE83TW13TkJIS1c1U1YwIiwieSI6IlNMV194U2ZmemxQV3JIRVZJMzBESE1fNGVnVnd0M05RcWVVRDduTUZwcHMifX0";
         let expected_encrypted_key = "0DJjBXri_kBcC46IkU5_Jk9BqaQeHdv2";
         let expected_iv = "Gvh1UwtBoHKSjqaS";
-        let expected_ciphertext = "lJf3HbOApxMEBkCMOoTnnABxs_CvTWUmZQ2ElLOhZ8G1puF2jd6t8YYuDMBycqIE";
+        let expected_ciphertext =
+            "lJf3HbOApxMEBkCMOoTnnABxs_CvTWUmZQ2ElLOhZ8G1puF2jd6t8YYuDMBycqIE";
         let expected_tag = "8PLXTPJfv0n6PMRZZwwjGw";
 
         // Verify our base64url encoding matches the RFC
@@ -497,26 +522,21 @@ mod tests {
         // This is a JWE using AES-256-GCM direct encryption
         let plaintext = b"Live long and prosper.";
         let cek = ContentEncryptionKey::new(vec![
-            177, 161, 244, 128, 84, 143, 225, 115, 
-            63, 180, 3, 255, 107, 154, 212, 246,
-            138, 7, 110, 91, 112, 46, 34, 105,
-            47, 130, 203, 46, 122, 234, 64, 252,
+            177, 161, 244, 128, 84, 143, 225, 115, 63, 180, 3, 255, 107, 154, 212, 246, 138, 7,
+            110, 91, 112, 46, 34, 105, 47, 130, 203, 46, 122, 234, 64, 252,
         ]);
 
         // Create IV from RFC
         let iv = URL_SAFE_NO_PAD.decode("refa467QzzKx6QAB").unwrap();
 
         // Create protected header
-        let header = JweHeader::new_direct(ContentEncryptionAlgorithm::A256Gcm, Some("7".to_string()));
+        let header =
+            JweHeader::new_direct(ContentEncryptionAlgorithm::A256Gcm, Some("7".to_string()));
         let protected = header.to_string().unwrap();
 
         // Encrypt content
-        let (ciphertext, tag) = encrypt_aes_gcm(
-            cek.as_bytes(),
-            &iv,
-            protected.as_bytes(),
-            plaintext,
-        ).unwrap();
+        let (ciphertext, tag) =
+            encrypt_aes_gcm(cek.as_bytes(), &iv, protected.as_bytes(), plaintext).unwrap();
 
         // Verify against RFC values
         let expected_ciphertext = URL_SAFE_NO_PAD.decode(
@@ -528,13 +548,8 @@ mod tests {
         assert_eq!(tag, expected_tag);
 
         // Test decryption
-        let decrypted = decrypt_aes_gcm(
-            cek.as_bytes(),
-            &iv,
-            protected.as_bytes(),
-            &ciphertext,
-            &tag,
-        ).unwrap();
+        let decrypted =
+            decrypt_aes_gcm(cek.as_bytes(), &iv, protected.as_bytes(), &ciphertext, &tag).unwrap();
 
         assert_eq!(decrypted, plaintext);
     }
@@ -546,11 +561,16 @@ mod tests {
         let plaintext = b"Live long and prosper.";
 
         // Create recipient key pair
-        let (recipient_private, recipient_public) = generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
+        let (recipient_private, recipient_public) =
+            generate_ephemeral_keypair(EcdhCurve::P256).unwrap();
 
         // Create ephemeral key pair from RFC
-        let epk_x = URL_SAFE_NO_PAD.decode("gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0").unwrap();
-        let epk_y = URL_SAFE_NO_PAD.decode("SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps").unwrap();
+        let epk_x = URL_SAFE_NO_PAD
+            .decode("gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0")
+            .unwrap();
+        let epk_y = URL_SAFE_NO_PAD
+            .decode("SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps")
+            .unwrap();
         let mut epk_public = Vec::with_capacity(65);
         epk_public.push(0x04); // Uncompressed point
         epk_public.extend_from_slice(&epk_x);
@@ -565,33 +585,32 @@ mod tests {
         let protected = header.to_string().unwrap();
 
         // Derive shared secret
-        let shared_secret = ecdh_key_agreement(EcdhCurve::P256, &recipient_private, &epk_public).unwrap();
+        let shared_secret =
+            ecdh_key_agreement(EcdhCurve::P256, &recipient_private, &epk_public).unwrap();
 
         // Derive key encryption key
         let kek = derive_key_encryption_key_es(&shared_secret, None, None).unwrap();
 
         // Create content encryption key
         let cek = ContentEncryptionKey::new(vec![
-            177, 161, 244, 128, 84, 143, 225, 115,
-            63, 180, 3, 255, 107, 154, 212, 246,
-            138, 7, 110, 91, 112, 46, 34, 105,
-            47, 130, 203, 46, 122, 234, 64, 252,
+            177, 161, 244, 128, 84, 143, 225, 115, 63, 180, 3, 255, 107, 154, 212, 246, 138, 7,
+            110, 91, 112, 46, 34, 105, 47, 130, 203, 46, 122, 234, 64, 252,
         ]);
 
         // Wrap content encryption key
         let encrypted_key = wrap_key(&kek, &cek).unwrap();
 
         // Encrypt content
-        let (ciphertext, tag) = encrypt_aes_gcm(
-            cek.as_bytes(),
-            &iv,
-            protected.as_bytes(),
-            plaintext,
-        ).unwrap();
+        let (ciphertext, tag) =
+            encrypt_aes_gcm(cek.as_bytes(), &iv, protected.as_bytes(), plaintext).unwrap();
 
         // Verify against RFC values
-        let expected_encrypted_key = URL_SAFE_NO_PAD.decode("0DJjBXri_kBcC46IkU5_Jk9BqaQeHdv2").unwrap();
-        let expected_ciphertext = URL_SAFE_NO_PAD.decode("lJf3HbOApxMEBkCMOoTnnABxs_CvTWUmZQ2ElLOhZ8G1puF2jd6t8YYuDMBycqIE").unwrap();
+        let expected_encrypted_key = URL_SAFE_NO_PAD
+            .decode("0DJjBXri_kBcC46IkU5_Jk9BqaQeHdv2")
+            .unwrap();
+        let expected_ciphertext = URL_SAFE_NO_PAD
+            .decode("lJf3HbOApxMEBkCMOoTnnABxs_CvTWUmZQ2ElLOhZ8G1puF2jd6t8YYuDMBycqIE")
+            .unwrap();
         let expected_tag = URL_SAFE_NO_PAD.decode("8PLXTPJfv0n6PMRZZwwjGw").unwrap();
 
         assert_eq!(encrypted_key, expected_encrypted_key);
@@ -599,14 +618,9 @@ mod tests {
         assert_eq!(tag, expected_tag);
 
         // Test decryption
-        let decrypted = decrypt_aes_gcm(
-            cek.as_bytes(),
-            &iv,
-            protected.as_bytes(),
-            &ciphertext,
-            &tag,
-        ).unwrap();
+        let decrypted =
+            decrypt_aes_gcm(cek.as_bytes(), &iv, protected.as_bytes(), &ciphertext, &tag).unwrap();
 
         assert_eq!(decrypted, plaintext);
     }
-} 
+}

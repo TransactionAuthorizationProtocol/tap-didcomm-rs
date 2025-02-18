@@ -5,10 +5,6 @@ use thiserror::Error;
 /// Error type for the `DIDComm` core library.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Invalid message format
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-
     /// Serialization error
     #[error("Serialization error: {0}")]
     SerializationError(String),
@@ -29,10 +25,6 @@ pub enum Error {
     #[error("Decryption failed: {0}")]
     DecryptionFailed(String),
 
-    /// Base64 decode error
-    #[error("Base64 decode error: {0}")]
-    Base64(#[from] base64::DecodeError),
-
     /// System time error
     #[error("System time error: {0}")]
     SystemTime(#[from] std::time::SystemTimeError),
@@ -48,12 +40,50 @@ pub enum Error {
     /// HTTP error
     #[error("HTTP error: {0}")]
     Http(String),
-}
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Error::SerializationError(err.to_string())
-    }
+    /// Error during key agreement operation
+    #[error("Key agreement error: {0}")]
+    KeyAgreement(String),
+
+    /// Error processing the JWE header
+    #[error("Header error: {0}")]
+    Header(String),
+
+    /// Invalid key material
+    #[error("Invalid key: {0}")]
+    InvalidKey(String),
+
+    /// Authentication failed during decryption
+    #[error("Authentication failed")]
+    AuthenticationFailed,
+
+    /// JSON serialization/deserialization error
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    /// Invalid curve specified for operation
+    #[error("Invalid curve: {0}")]
+    InvalidCurve(String),
+
+    /// Invalid algorithm specified for operation
+    #[error("Invalid algorithm: {0}")]
+    InvalidAlgorithm(String),
+
+    /// Error when parsing or validating a DID Document
+    #[error("Invalid DID Document: {0}")]
+    InvalidDIDDocument(String),
+
+    /// Error when key material is invalid or in wrong format
+    #[error("Invalid key material: {0}")]
+    InvalidKeyMaterial(String),
+
+    /// Error during key wrapping operation
+    #[error("Key wrapping failed: {0}")]
+    KeyWrap(String),
+
+    /// Error during content encryption/decryption
+    #[error("Content encryption error: {0}")]
+    ContentEncryption(String),
 }
 
 /// Result type for the `DIDComm` core library.

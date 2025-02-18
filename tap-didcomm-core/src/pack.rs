@@ -3,8 +3,7 @@
 //! This module provides functions for packing and unpacking `DIDComm` messages
 //! using different methods (signed, authcrypt, anoncrypt).
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use serde_json::json;
+use base64::Engine;
 
 use crate::crypto::sign_message;
 use crate::jwe::{EncryptedMessageBuilder, Recipient};

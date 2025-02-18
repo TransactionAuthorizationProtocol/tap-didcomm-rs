@@ -46,15 +46,14 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::str::FromStr;
+
 use zeroize::Zeroize;
 
 use crate::plugin::DIDResolver;
+use crate::Error;
 use algorithms::*;
 
 pub mod algorithms;
-pub mod error;
 pub mod header;
 
 /// Key agreement algorithms supported for JWE.
@@ -323,9 +322,7 @@ impl EphemeralPublicKey {
     pub fn raw_public_key(&self) -> Result<Vec<u8>> {
         base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(&self.x)
-            .map_err(|e| {
-                JweError::InvalidKeyMaterial(format!("Invalid public key encoding: {}", e))
-            })
+            .map_err(|e| Error::InvalidKeyMaterial(format!("Invalid public key encoding: {}", e)))
     }
 }
 
@@ -347,7 +344,7 @@ pub struct JweMessage {
     pub tag: String,
 }
 
-pub use error::{JweError, Result};
+pub use error::{Error, Result};
 
 impl JweMessage {
     /// Creates a new JWE message by encrypting the given plaintext.
@@ -377,7 +374,7 @@ impl JweMessage {
         // Encode header
         let protected = URL_SAFE_NO_PAD.encode(
             serde_json::to_string(&header)
-                .map_err(|e| JweError::Header(format!("Failed to serialize header: {}", e)))?,
+                .map_err(|e| Error::Header(format!("Failed to serialize header: {}", e)))?,
         );
 
         // Generate content encryption key and IV
@@ -429,15 +426,15 @@ impl JweMessage {
         // Decode protected header
         let protected_json = URL_SAFE_NO_PAD
             .decode(&self.protected)
-            .map_err(|e| JweError::Base64("Failed to decode protected header", e))?;
+            .map_err(|e| Error::Base64("Failed to decode protected header"))?;
 
         let header: JweHeader = serde_json::from_slice(&protected_json)
-            .map_err(|e| JweError::Header(format!("Failed to parse header: {}", e)))?;
+            .map_err(|e| Error::Header(format!("Failed to parse header: {}")))?;
 
         // Extract ephemeral public key
         let epk = header
             .epk
-            .ok_or_else(|| JweError::Header("Missing ephemeral public key".to_string()))?;
+            .ok_or_else(|| Error::Header("Missing ephemeral public key".to_string()))?;
         let sender_public = epk.raw_public_key()?;
 
         // Perform ECDH
@@ -449,19 +446,19 @@ impl JweMessage {
         // Unwrap content encryption key
         let encrypted_key = URL_SAFE_NO_PAD
             .decode(&self.encrypted_key)
-            .map_err(|e| JweError::Base64("Failed to decode encrypted key", e))?;
+            .map_err(|e| Error::Base64("Failed to decode encrypted key"))?;
         let cek = unwrap_key(&kek, &encrypted_key)?;
 
         // Decode IV and ciphertext
         let iv = URL_SAFE_NO_PAD
             .decode(&self.iv)
-            .map_err(|e| JweError::Base64("Failed to decode IV", e))?;
+            .map_err(|e| Error::Base64("Failed to decode IV"))?;
         let ciphertext = URL_SAFE_NO_PAD
             .decode(&self.ciphertext)
-            .map_err(|e| JweError::Base64("Failed to decode ciphertext", e))?;
+            .map_err(|e| Error::Base64("Failed to decode ciphertext"))?;
         let tag = URL_SAFE_NO_PAD
             .decode(&self.tag)
-            .map_err(|e| JweError::Base64("Failed to decode authentication tag", e))?;
+            .map_err(|e| Error::Base64("Failed to decode authentication tag"))?;
 
         // Decrypt content
         let aad = self.protected.as_bytes();
@@ -487,18 +484,18 @@ async fn resolve_key<R: DIDResolver>(resolver: &R, did: &str) -> Result<Vec<u8>>
     // Extract verification method from DID Document
     let vm = doc["verificationMethod"]
         .as_array()
-        .ok_or_else(|| JweError::InvalidDIDDocument("No verification methods found".into()))?
+        .ok_or_else(|| Error::InvalidDIDDocument("No verification methods found".into()))?
         .first()
-        .ok_or_else(|| JweError::InvalidDIDDocument("Empty verification methods".into()))?;
+        .ok_or_else(|| Error::InvalidDIDDocument("Empty verification methods".into()))?;
 
     // Get public key bytes
     let public_key_base64 = vm["publicKeyBase64"]
         .as_str()
-        .ok_or_else(|| JweError::InvalidDIDDocument("No publicKeyBase64 found".into()))?;
+        .ok_or_else(|| Error::InvalidDIDDocument("No publicKeyBase64 found".into()))?;
 
     URL_SAFE_NO_PAD
         .decode(public_key_base64)
-        .map_err(|e| JweError::InvalidDIDDocument(format!("Invalid public key encoding: {}", e)))
+        .map_err(|e| Error::InvalidDIDDocument(format!("Invalid public key encoding: {}", e)))
 }
 
 pub struct EncryptedMessageBuilder {
@@ -704,6 +701,6 @@ mod tests {
 
         // Attempt to decrypt
         let result = jwe.decrypt(&recipient_private, &resolver).await;
-        assert!(matches!(result, Err(JweError::AuthenticationFailed)));
+        assert!(matches!(result, Err(Error::AuthenticationFailed)));
     }
 }

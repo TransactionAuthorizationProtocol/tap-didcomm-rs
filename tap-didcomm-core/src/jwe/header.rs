@@ -3,12 +3,11 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
 
 use super::{ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm};
-use crate::jwe::error::{JweError, Result};
+use crate::error::{Error, Result};
 
 /// The protected header of a JWE.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +99,8 @@ impl JweHeader {
 
     /// Deserializes a header from a base64url-encoded string.
     pub fn from_string(s: &str) -> Result<Self> {
-        let bytes = URL_SAFE_NO_PAD.decode(s).map_err(JweError::Base64)?;
-        serde_json::from_slice(&bytes).map_err(JweError::Json)
+        let bytes = URL_SAFE_NO_PAD.decode(s).map_err(Error::Base64)?;
+        serde_json::from_slice(&bytes).map_err(Error::Json)
     }
 }
 
@@ -111,7 +110,7 @@ impl EphemeralPublicKey {
         match curve {
             EcdhCurve::X25519 => {
                 if public_key.len() != 32 {
-                    return Err(JweError::InvalidKeyMaterial(
+                    return Err(Error::InvalidKeyMaterial(
                         "Invalid X25519 public key length".to_string(),
                     ));
                 }
@@ -126,7 +125,7 @@ impl EphemeralPublicKey {
                 // For NIST curves, the public key is encoded in uncompressed form:
                 // 0x04 || x || y
                 if public_key[0] != 0x04 {
-                    return Err(JweError::InvalidKeyMaterial(
+                    return Err(Error::InvalidKeyMaterial(
                         "Invalid NIST curve public key format".to_string(),
                     ));
                 }
@@ -139,7 +138,7 @@ impl EphemeralPublicKey {
                 };
 
                 if public_key.len() != 1 + 2 * key_size {
-                    return Err(JweError::InvalidKeyMaterial(
+                    return Err(Error::InvalidKeyMaterial(
                         "Invalid NIST curve public key length".to_string(),
                     ));
                 }
@@ -162,18 +161,18 @@ impl EphemeralPublicKey {
         match self.crv {
             EcdhCurve::X25519 => URL_SAFE_NO_PAD
                 .decode(&self.x)
-                .map_err(|e| JweError::Base64("Failed to decode X25519 public key", e)),
+                .map_err(|e| Error::Base64("Failed to decode X25519 public key")),
             EcdhCurve::P256 | EcdhCurve::P384 | EcdhCurve::P521 => {
                 let x = URL_SAFE_NO_PAD
                     .decode(&self.x)
-                    .map_err(|e| JweError::Base64("Failed to decode x coordinate", e))?;
+                    .map_err(|e| Error::Base64("Failed to decode x coordinate"))?;
 
                 let y = self.y.as_ref().ok_or_else(|| {
-                    JweError::InvalidKeyMaterial("Missing y coordinate for NIST curve".to_string())
+                    Error::InvalidKeyMaterial("Missing y coordinate for NIST curve".to_string())
                 })?;
                 let y = URL_SAFE_NO_PAD
                     .decode(y)
-                    .map_err(|e| JweError::Base64("Failed to decode y coordinate", e))?;
+                    .map_err(|e| Error::Base64("Failed to decode y coordinate"))?;
 
                 let mut key = Vec::with_capacity(1 + x.len() + y.len());
                 key.push(0x04); // Uncompressed point format
@@ -193,11 +192,11 @@ impl ToString for JweHeader {
 }
 
 impl FromStr for JweHeader {
-    type Err = JweError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
         let bytes = URL_SAFE_NO_PAD.decode(s)?;
-        serde_json::from_slice(&bytes).map_err(JweError::Serialization)
+        serde_json::from_slice(&bytes).map_err(Error::Serialization)
     }
 }
 
