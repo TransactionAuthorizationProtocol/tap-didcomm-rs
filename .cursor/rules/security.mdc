@@ -1,0 +1,12 @@
+---
+description: Security rules
+globs: *.rs, *.ts
+---
+## Security
+- Follow cryptographic best practices
+- Minimize dependencies
+- Minimize complexity
+- Handle sensitive data appropriately
+- Use secure random number generation
+- Validate all inputs
+- Test security-critical code thoroughly

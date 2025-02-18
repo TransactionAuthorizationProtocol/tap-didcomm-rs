@@ -1,0 +1,13 @@
+---
+description: Rules for writing good typescript
+globs: *.ts
+---
+- Always write idiomatic Typescript code.
+- Prefer using interfaces and enums over types
+- Prefer using pnpm as the package manager
+- Every new function or module must include comprehensive unit tests using vitest
+- Use Typescript's error handling best practices (Result<T, E>, ? operator, etc.).
+- Document all public APIs with comprehensive typedoc comments.
+- Remember that any WASM code needs to be compiled from the Rust code in the `tap-didcomm-core` and `tap-didcomm-node` packages.
+- Always check you are in the correct directory before running any commands.
+

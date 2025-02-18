@@ -1,0 +1,173 @@
+---
+description: 
+globs: *.*
+---
+You should also use the `.cursor/rules/tasks.mdc` file as a Scratchpad to organize your thoughts. Especially when you receive a new task, you should first review the content of the Scratchpad, clear old different task if necessary, first explain the task, and plan the steps you need to take to complete the task. You can use todo markers to indicate the progress, e.g.
+[X] Task 1
+[ ] Task 2
+
+Also update the progress of the task in the Scratchpad when you finish a subtask.
+Especially when you finished a milestone, it will help to improve your depth of task accomplishment to use the Scratchpad to reflect and plan.
+
+The goal is to help you maintain a big picture as well as the progress of the task. Always refer to the Scratchpad when you plan the next step.
+
+### Current Task Progress
+[X] Fix mock plugin implementation
+[X] Update TypeScript configuration
+[X] Fix linter errors in plugins.ts
+[X] Fix linter errors in custom-resolver.ts
+[X] Fix linter errors in custom-crypto.ts
+[X] Fix linter errors in node example
+[X] Verify type checking passes
+[ ] Run tests to ensure everything works correctly
+
+### Next Steps
+1. Run the test suite to verify all changes
+2. Fix any remaining test failures
+3. Document the changes made
+4. Update the build process if needed
+
+# Scratchpad
+
+## Current Task: Fix tap-didcomm-core Critical Linter Errors
+
+### Current Focus - Critical Linter Errors
+
+1. Fix Cryptographic Operations (Priority 1)
+   - [ ] Fix algorithms.rs:
+     - [ ] Fix HMAC trait ambiguity by specifying correct trait bounds
+     - [ ] Fix EphemeralSecret API usage for X25519
+     - [ ] Fix AES-GCM type mismatches with GenericArray
+     - [ ] Fix SecretKey initialization for NIST curves
+     - [ ] Fix type mismatches in encryption/decryption operations
+
+2. Fix Error Handling (Priority 2)
+   - [X] Fix error.rs:
+     - [X] Remove duplicate trait implementations using #[from]
+     - [X] Fix Base64 error variant to use structured fields
+     - [X] Fix error type hierarchy
+
+3. Fix Type System Issues (Priority 3)
+   - [ ] Fix type mismatches in jwe/mod.rs
+   - [ ] Fix ownership/move issues in pack.rs
+   - [ ] Fix trait implementations in plugin.rs
+
+Next steps:
+1. Fix HMAC initialization in algorithms.rs
+2. Fix EphemeralSecret and SecretKey APIs
+3. Fix AES-GCM type mismatches
+
+### Strategy
+- Focus on cryptographic operations first as they affect other parts
+- Use proper type annotations to resolve trait ambiguity
+- Follow cryptographic library API documentation strictly
+
+### Notes
+- Many errors are interconnected - fixing error handling first will resolve several other issues
+- Need to maintain security while fixing cryptographic operations
+- Some errors will be automatically resolved after fixing trait implementations
+
+Would you like me to start with implementing any specific part of this plan?
+
+## Current Task: Fix Cryptographic API Usage
+
+### Overview
+Need to fix EphemeralSecret API usage and validate all crypto operations.
+
+### Progress Tracking
+[X] Review current implementation
+[X] Fix AES-KW key handling with GenericArray
+[X] Fix HMAC trait ambiguity
+[X] Update EphemeralSecret API usage
+[X] Fix duplicate test names
+[X] Fix trait implementations
+[X] Add missing implementations
+[ ] Run formatting and tests
+[ ] Fix any remaining issues
+
+### Strategy
+- Check latest API docs for EphemeralSecret
+- Import required traits
+- Update method calls
+- Run cargo fmt, clippy, and test
+
+### Notes
+- Fixed Error trait conflicts
+- Added proper EphemeralPublicKey implementation
+- Fixed DIDResolver trait implementation
+- Added utils module with DID validation
+- Fixed MockTestPlugin implementation
+
+## Current Task: Fix Ownership/Move Errors in pack.rs
+
+### Overview
+Need to fix ownership issues in pack.rs by properly handling references and clones for recipient and other moved values.
+
+### Progress Tracking
+[X] Review current implementation
+[X] Fix pattern matching to use references
+[X] Add explicit clones where needed
+[X] Add missing imports and traits
+[X] Create missing modules and types
+[ ] Verify changes compile
+[ ] Run tests
+
+### Strategy
+- Use `if let Some(ref recipient)` instead of moving values
+- Add explicit clones where data needs to be used multiple times
+- Keep original data intact for subsequent operations
+
+### Notes
+- Fixed conflicting trait implementations in Error
+- Created missing modules and types
+- Added proper trait implementations
+- Organized module structure
+
+## Current Task: Update Error enum
+
+### Overview
+Need to add missing error variants to Error enum to support all error cases from algorithms and header modules.
+
+### Progress Tracking
+[X] Review current Error implementation
+[X] Identify missing variants
+[X] Add new variants with proper documentation
+[X] Ensure proper error conversion implementations
+[X] Verify changes compile
+
+### Notes
+- Added all missing variants with documentation
+- Implemented From trait for serde_json::Error
+- Used descriptive error messages
+
+## Current Task: Fix tap-didcomm-web Package
+
+### Overview
+Working on fixing issues in the tap-didcomm-web package, which provides a web server interface for DIDComm operations.
+
+### Progress Tracking
+[ ] Review and fix any dependency issues in Cargo.toml
+[ ] Fix any compilation errors in the web server implementation
+[ ] Ensure proper integration with tap-didcomm-core and tap-didcomm-node
+[ ] Verify all tests are passing
+[ ] Update documentation if needed
+
+### Current State
+- tap-didcomm-core and tap-didcomm-node crates are working
+- Need to focus on tap-didcomm-web fixes
+- Will maintain existing functionality while fixing issues
+
+### Next Steps
+1. Check current compilation status of tap-didcomm-web
+2. Address any dependency mismatches
+3. Fix compilation errors
+4. Run and verify tests
+5. Document any changes made
+
+### Notes
+- Keep focus only on tap-didcomm-web
+- Ensure compatibility with working core and node crates
+- Follow Rust best practices for web server implementation
+- Maintain proper error handling and logging
+
+

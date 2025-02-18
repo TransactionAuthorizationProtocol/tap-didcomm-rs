@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description: Rules for commiting code after completing tasks
+globs: *.ts, *.rs
 ---
 # Git Conventional Commits
 

@@ -1,0 +1,16 @@
+---
+description: PRDs
+globs: prds/*.md
+---
+# PRDs
+
+Always refer to the PRDs to understand the project and mark any tasks done when you finish them.
+
+Always update this with the current PRD you are working on
+
+## Current PRD
+
+- [X] [v1](../prds/v1.md)
+- [X] [actors](../prds/actors.md)
+- [ ] [encryption](../prds/encryption.md)
+- [ ] [typescript](../prds/typescript.md) 

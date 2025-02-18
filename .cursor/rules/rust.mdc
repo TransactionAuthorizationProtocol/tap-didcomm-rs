@@ -1,0 +1,74 @@
+---
+description: Rules for Rust
+globs: *.rs, Cargo.toml
+---
+# Rust Rules
+
+## Build and Test Workflow
+1. Always run the following commands in sequence before AND after making code changes:
+   - `cargo fmt` - Format all code
+   - `cargo clippy` - Check for lints and common mistakes
+   - `cargo build` - Ensure everything compiles
+   - `cargo test` - Run all tests
+
+2. Work through crates in the following sequence:
+   - `tap-didcomm-core` - Core functionality first
+   - `tap-didcomm-node` - Node.js bindings second
+   - `tap-didcomm-web` - Web bindings third
+   - `tap-didcomm-ts` - TypeScript integration last
+
+3. For TypeScript changes:
+   - After Rust changes, run `pnpm build:wasm` in `tap-didcomm-ts`
+   - Run `pnpm test` to verify TypeScript integration
+
+## Code Quality
+- Always write idiomatic Rust code
+- Every new function or module must include comprehensive unit tests
+- Use Rust's error handling best practices (Result<T, E>, ? operator, etc.)
+- Document all public APIs with comprehensive rustdoc comments (///)
+- Maintain a modular design: keep CAIP, DIDComm, TAP core, and WASM bindings separate
+- Prioritize clear and maintainable code
+- Check off tasks in the project plan file as soon as they are complete
+
+## Testing
+- Aim for 100% test coverage on all modules
+- Test both success and error cases
+- Include integration tests between crates
+- Test WASM bindings in both Node.js and browser environments
+- Verify TypeScript type definitions match Rust APIs
+
+## WASM Considerations
+- Keep WASM-specific dependencies at the crate level
+- Use separate WASM targets for web and Node.js builds
+- Ensure proper error handling across language boundaries
+- Test WASM bindings in both Node.js and browser contexts
+- Provide accurate TypeScript definitions
+
+## Documentation
+- Document all public APIs with comprehensive rustdoc comments
+- Include examples in documentation
+- Document WASM usage in TypeScript
+- Keep README files up to date
+- When running `cargo doc` do not use the `--open` flag
+
+## Error Handling
+- Use thiserror for deriving error implementations
+- Ensure descriptive error messages
+- Handle all error cases explicitly
+- Test error conditions
+- Properly convert errors across language boundaries
+
+## Dependencies
+- Keep dependencies up to date
+- Minimize dependency footprint
+- Use consistent versions across crates
+- Handle WASM-specific dependencies appropriately
+- Document dependency requirements
+
+## CI/CD
+- Ensure CI/CD integration is updated as features are added
+- All tests must pass before merging
+- Maintain consistent formatting
+- Address all clippy warnings
+- Build documentation in CI
+
