@@ -199,29 +199,11 @@ pub trait DIDCommPlugins {
     async fn get_signer(&self, did: &str) -> crate::error::Result<Box<dyn Signer>>;
 }
 
-// For testing
-#[cfg(test)]
-pub struct MockTestPlugin;
-
-#[cfg(test)]
-#[async_trait::async_trait]
-impl DIDCommPlugin for MockTestPlugin {
-    fn resolver(&self) -> &dyn DIDResolver {
-        self
-    }
-
-    fn signer(&self) -> &dyn Signer {
-        self
-    }
-
-    fn encryptor(&self) -> &dyn Encryptor {
-        self
-    }
-}
-
+// Test implementations
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
     pub struct MockTestPlugin;
@@ -256,7 +238,9 @@ mod tests {
         }
 
         async fn decrypt(&self, message: &[u8], _recipient: &str) -> Result<Vec<u8>> {
-            Ok(STANDARD.decode(message)?)
+            STANDARD
+                .decode(message)
+                .map_err(|e| Error::Base64(e.to_string()))
         }
     }
 

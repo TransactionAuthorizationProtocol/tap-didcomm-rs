@@ -2,7 +2,6 @@
 description: Security rules
 globs: *.rs, *.ts
 ---
-
 ## Security
 - Follow cryptographic best practices
 - Minimize dependencies

@@ -180,7 +180,7 @@ pub async fn pack_encrypted<'a>(
     // Add sender if present
     if let Some(ref sender_did) = from {
         let sender_key = plugins.resolve_did(sender_did).await?;
-        builder = builder.from(sender_did.clone(), sender_key);
+        builder = builder.from(sender_did.to_string(), sender_key);
     }
 
     // Add all recipients
@@ -202,9 +202,10 @@ mod tests {
     #[tokio::test]
     async fn test_pack_signed() -> Result<()> {
         let plugin = MockTestPlugin;
-        let message = Message::new("test".to_string())
-            .from("did:example:alice")
-            .to(vec!["did:example:bob"]);
+        let mut message = Message::default();
+        message.body = "test".to_string();
+        message.from = Some("did:example:alice".to_string());
+        message.to = Some(vec!["did:example:bob".to_string()]);
 
         let packed = pack_message(&message, &plugin, PackingType::Signed).await?;
         let unpacked =
@@ -217,9 +218,10 @@ mod tests {
     #[tokio::test]
     async fn test_pack_authcrypt() -> Result<()> {
         let plugin = MockTestPlugin;
-        let message = Message::new("test".to_string())
-            .from("did:example:alice")
-            .to(vec!["did:example:bob"]);
+        let mut message = Message::default();
+        message.body = "test".to_string();
+        message.from = Some("did:example:alice".to_string());
+        message.to = Some(vec!["did:example:bob".to_string()]);
 
         let packed = pack_message(&message, &plugin, PackingType::AuthcryptV2).await?;
         let unpacked =

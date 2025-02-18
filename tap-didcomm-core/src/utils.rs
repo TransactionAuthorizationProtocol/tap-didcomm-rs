@@ -4,7 +4,9 @@ use crate::error::Result;
 pub fn validate_did(did: String) -> Result<()> {
     // Basic validation - can be expanded
     if !did.starts_with("did:") {
-        return Err(crate::Error::InvalidFormat("Invalid DID format".into()));
+        return Err(crate::Error::InvalidDIDDocument(
+            "Invalid DID format".into(),
+        ));
     }
     Ok(())
-} 
+}
