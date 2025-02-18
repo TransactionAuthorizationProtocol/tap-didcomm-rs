@@ -57,6 +57,27 @@ During your interaction with the user, if you find anything reusable in this pro
 - Implement proper error handling for all async operations
 - Use proper TypeScript configuration for WASM integration
 
+## Cryptographic Implementations
+- Use constant-time operations for cryptographic comparisons to prevent timing attacks
+- Implement comprehensive test vectors for all cryptographic operations
+- Ensure proper key material zeroization when dropped
+- Add detailed security considerations in module-level documentation
+- Use type aliases for cryptographic types to improve code readability and maintainability
+- Implement thorough input validation for all cryptographic parameters
+- Add comprehensive error handling for all cryptographic operations
+- Use appropriate error types that don't leak sensitive information
+- Include test cases for invalid inputs and error conditions
+- Document security considerations and recommendations in public APIs
+- Use appropriate algorithm choices and provide guidance on algorithm selection
+- Implement proper key derivation and management practices
+- Add test cases for key agreement, encryption, and authentication
+- Use appropriate nonce/IV generation and management
+- Implement proper padding validation for block ciphers
+- Add test cases for compressed and uncompressed key formats
+- Use appropriate base64 encoding for JWE header parameters
+- Implement proper AEAD (Authenticated Encryption with Associated Data) handling
+- Add test cases for tampering detection in authenticated encryption
+- Use appropriate key sizes and validate key lengths
 
 ## Rust Package
 - Keep WASM-specific dependencies at the crate level

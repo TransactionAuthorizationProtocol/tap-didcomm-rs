@@ -1,17 +1,17 @@
-//! JWE (JSON Web Encryption) implementation for DIDComm.
+//! JWE (JSON Web Encryption) implementation for `DIDComm`.
 //!
-//! This module provides a complete implementation of JWE for DIDComm v2,
-//! supporting both anoncrypt and authcrypt modes, multiple recipients,
+//! This module provides a complete implementation of JWE for `DIDComm` v2,
+//! supporting both `AnonCrypt` and `AuthCrypt` modes, multiple recipients,
 //! and various key agreement and content encryption algorithms.
 //!
 //! The implementation follows RFC 7516 (JSON Web Encryption) and includes
-//! support for the algorithms required by the DIDComm v2 specification.
+//! support for the algorithms required by the `DIDComm` v2 specification.
 //!
 //! # Features
 //!
-//! - Support for ECDH-ES+A256KW and ECDH-1PU+A256KW key agreement
-//! - Multiple content encryption algorithms (A256CBC-HS512, A256GCM, XC20P)
-//! - Support for X25519 and NIST curves (P-256, P-384, P-521)
+//! - Support for `ECDH-ES+A256KW` and `ECDH-1PU+A256KW` key agreement
+//! - Multiple content encryption algorithms (`A256CBC-HS512`, `A256GCM`, `XC20P`)
+//! - Support for `X25519` and NIST curves (`P-256`, `P-384`, `P-521`)
 //! - Multiple recipient support with shared content encryption
 //! - APU/APV parameter support in key derivation
 //! - Compressed NIST curve point support
@@ -41,6 +41,15 @@
 //!     assert_eq!(plaintext.to_vec(), decrypted);
 //! }
 //! ```
+//!
+//! # Security Considerations
+//!
+//! - Key material is automatically zeroized when dropped
+//! - Keys should be generated using cryptographically secure random numbers
+//! - Keys should be stored securely when not in use
+//! - Use appropriate key agreement and content encryption algorithms
+//! - Validate all inputs before processing
+//! - Handle errors appropriately to avoid information leakage
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -51,7 +60,11 @@ use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
 use crate::plugin::{DIDCommPlugin, DIDResolver};
-use algorithms::*;
+use algorithms::{
+    decrypt_aes_cbc_hmac, decrypt_aes_gcm, decrypt_xchacha20poly1305, derive_key,
+    ecdh_key_agreement, encrypt_aes_cbc_hmac, encrypt_aes_gcm, encrypt_xchacha20poly1305,
+    generate_ephemeral_keypair, generate_random_key, unwrap_key, wrap_key,
+};
 
 pub mod algorithms;
 pub mod header;
@@ -82,6 +95,7 @@ pub enum PackingType {
 /// - Key material is automatically zeroized when dropped
 /// - Keys should be generated using cryptographically secure random numbers
 /// - Keys should be stored securely when not in use
+/// - Never log or expose key material
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncryptionKey(pub Vec<u8>);
 
@@ -167,9 +181,6 @@ impl Default for EncryptionConfig {
 }
 
 /// A complete JWE message structure.
-///
-/// This represents a JWE in either JSON Serialization or Compact
-/// Serialization format, with support for multiple recipients.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JweMessage {
     /// Protected header (base64url encoded)

@@ -6,9 +6,9 @@
 //! # Features
 //!
 //! - Message packing and unpacking with different security levels:
-//!   - Signed: Messages are signed but not encrypted
-//!   - AuthCrypt: Authenticated encryption with sender identity
-//!   - AnonCrypt: Anonymous encryption without sender identity
+//!   - `Signed`: Messages are signed but not encrypted
+//!   - `AuthCrypt`: Authenticated encryption with sender identity
+//!   - `AnonCrypt`: Anonymous encryption without sender identity
 //! - Extensible plugin system for:
 //!   - DID resolution
 //!   - Message signing and verification
@@ -62,6 +62,16 @@
 //! - Handle errors appropriately to avoid information leakage
 //! - Use secure random number generation (provided by the crate)
 //! - Keep private keys secure and use appropriate key management
+//!
+//! # Errors
+//!
+//! This crate uses a custom `Error` type that covers:
+//! - DID resolution failures
+//! - Cryptographic operation failures
+//! - Message format errors
+//! - Plugin errors
+//! - Base64 encoding/decoding errors
+//! - JSON serialization/deserialization errors
 
 #![deny(missing_docs)]
 #![deny(unsafe_code)]

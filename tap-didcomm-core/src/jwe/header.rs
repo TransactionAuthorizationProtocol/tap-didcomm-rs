@@ -1,4 +1,16 @@
 //! JWE header types and functionality.
+//!
+//! This module provides types and functions for handling JSON Web Encryption (JWE)
+//! headers in the `DIDComm` v2 protocol. The header contains metadata about the
+//! encryption process, including algorithms used, key information, and additional
+//! parameters.
+//!
+//! # Security Considerations
+//!
+//! - Validate all header parameters before use
+//! - Protect header integrity during transmission
+//! - Handle errors appropriately without leaking sensitive information
+//! - Use appropriate algorithms based on security requirements
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -10,6 +22,18 @@ use super::types::{ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm}
 use crate::error::{Error, Result};
 
 /// The protected header of a JWE.
+///
+/// Contains metadata about the encryption process and key material.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::header::{JweHeader, EphemeralPublicKey};
+/// use tap_didcomm_core::jwe::types::{ContentEncryptionAlgorithm, EcdhCurve};
+///
+/// let epk = EphemeralPublicKey::new(EcdhCurve::X25519, &[0u8; 32]).unwrap();
+/// let header = JweHeader::new_anoncrypt(ContentEncryptionAlgorithm::A256Gcm, epk);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JweHeader {
     /// The key agreement algorithm
@@ -40,6 +64,21 @@ pub struct JweHeader {
 }
 
 /// An ephemeral public key for ECDH.
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::header::EphemeralPublicKey;
+/// use tap_didcomm_core::jwe::types::EcdhCurve;
+///
+/// let key = EphemeralPublicKey::new(EcdhCurve::X25519, &[0u8; 32]).unwrap();
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The public key length is invalid for the specified curve
+/// - The public key format is invalid (for NIST curves)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EphemeralPublicKey {
     /// The key type (always "EC" or "OKP")
@@ -57,7 +96,7 @@ pub struct EphemeralPublicKey {
 }
 
 impl JweHeader {
-    /// Creates a new JWE header for anoncrypt (ECDH-ES+A256KW).
+    /// Creates a new JWE header for anoncrypt (`ECDH-ES+A256KW`).
     ///
     /// # Arguments
     /// * `content_encryption` - The content encryption algorithm to use
@@ -81,7 +120,7 @@ impl JweHeader {
         }
     }
 
-    /// Creates a new JWE header for authcrypt (ECDH-1PU+A256KW).
+    /// Creates a new JWE header for authcrypt (`ECDH-1PU+A256KW`).
     ///
     /// # Arguments
     /// * `content_encryption` - The content encryption algorithm to use
@@ -111,8 +150,12 @@ impl JweHeader {
 
     /// Serializes the header to a base64url-encoded string.
     ///
+    /// # Returns
+    /// The base64url-encoded header string
+    ///
     /// # Errors
-    /// * `Error::Json` - If JSON serialization fails
+    /// Returns an error if:
+    /// * JSON serialization fails
     pub fn to_string(&self) -> Result<String> {
         let json = serde_json::to_string(self)?;
         Ok(URL_SAFE_NO_PAD.encode(json.as_bytes()))
@@ -120,9 +163,16 @@ impl JweHeader {
 
     /// Deserializes a header from a base64url-encoded string.
     ///
+    /// # Arguments
+    /// * `s` - The base64url-encoded header string
+    ///
+    /// # Returns
+    /// The deserialized header
+    ///
     /// # Errors
-    /// * `Error::Base64` - If base64 decoding fails
-    /// * `Error::Json` - If JSON parsing fails
+    /// Returns an error if:
+    /// * Base64 decoding fails
+    /// * JSON parsing fails
     pub fn from_string(s: &str) -> Result<Self> {
         let bytes = URL_SAFE_NO_PAD
             .decode(s)
@@ -138,8 +188,13 @@ impl EphemeralPublicKey {
     /// * `curve` - The ECDH curve to use
     /// * `public_key` - The raw public key bytes
     ///
+    /// # Returns
+    /// The new ephemeral public key
+    ///
     /// # Errors
-    /// * `Error::InvalidKeyMaterial` - If the public key is invalid for the specified curve
+    /// Returns an error if:
+    /// * The public key length is invalid for the specified curve
+    /// * The public key format is invalid (for NIST curves)
     pub fn new(curve: EcdhCurve, public_key: &[u8]) -> Result<Self> {
         match curve {
             EcdhCurve::X25519 => {
@@ -192,8 +247,13 @@ impl EphemeralPublicKey {
 
     /// Gets the raw public key bytes.
     ///
+    /// # Returns
+    /// The raw public key bytes
+    ///
     /// # Errors
-    /// * `Error::InvalidKeyMaterial` - If the stored public key is invalid
+    /// Returns an error if:
+    /// * Base64 decoding fails
+    /// * The stored public key format is invalid
     pub fn raw_public_key(&self) -> Result<Vec<u8>> {
         match self.crv {
             EcdhCurve::X25519 => URL_SAFE_NO_PAD

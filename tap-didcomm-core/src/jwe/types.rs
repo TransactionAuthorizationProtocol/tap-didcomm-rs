@@ -1,4 +1,15 @@
 //! Common types for JWE operations.
+//!
+//! This module provides the core types used for JSON Web Encryption (JWE)
+//! operations in the `DIDComm` v2 protocol, including key agreement algorithms,
+//! content encryption algorithms, and curve types.
+//!
+//! # Security Considerations
+//!
+//! - Use appropriate algorithms based on security requirements
+//! - Follow key management best practices
+//! - Handle errors appropriately without leaking sensitive information
+//! - Validate all inputs before processing
 
 use serde::{Deserialize, Serialize};
 
@@ -9,15 +20,23 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Security Considerations
 ///
-/// - ECDH-ES+A256KW provides anonymous encryption (anoncrypt)
-/// - ECDH-1PU+A256KW provides authenticated encryption (authcrypt)
+/// - `ECDH-ES+A256KW` provides anonymous encryption (`AnonCrypt`)
+/// - `ECDH-1PU+A256KW` provides authenticated encryption (`AuthCrypt`)
 /// - Both use AES key wrapping for the content encryption key
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::types::KeyAgreementAlgorithm;
+///
+/// let alg = KeyAgreementAlgorithm::EcdhEsA256kw;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum KeyAgreementAlgorithm {
-    /// ECDH-ES with AES key wrap (anoncrypt)
+    /// ECDH-ES with AES key wrap (`AnonCrypt`)
     EcdhEsA256kw,
-    /// ECDH-1PU with AES key wrap (authcrypt)
+    /// ECDH-1PU with AES key wrap (`AuthCrypt`)
     Ecdh1puA256kw,
 }
 
@@ -28,10 +47,18 @@ pub enum KeyAgreementAlgorithm {
 ///
 /// # Security Considerations
 ///
-/// - A256CBC-HS512 provides authenticated encryption with HMAC
-/// - A256GCM provides authenticated encryption with GCM
-/// - XC20P (XChaCha20-Poly1305) provides authenticated encryption
+/// - `A256CBC-HS512` provides authenticated encryption with HMAC
+/// - `A256GCM` provides authenticated encryption with GCM
+/// - `XC20P` (`XChaCha20-Poly1305`) provides authenticated encryption
 ///   with modern ChaCha20-Poly1305
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::types::ContentEncryptionAlgorithm;
+///
+/// let alg = ContentEncryptionAlgorithm::A256Gcm;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ContentEncryptionAlgorithm {
@@ -55,14 +82,22 @@ impl std::fmt::Display for ContentEncryptionAlgorithm {
 
 /// Elliptic curves supported for ECDH key agreement.
 ///
-/// Both NIST curves and modern curves (X25519) are supported
+/// Both NIST curves and modern curves (`X25519`) are supported
 /// to ensure broad compatibility and high security.
 ///
 /// # Security Considerations
 ///
-/// - X25519 is recommended for best security and performance
+/// - `X25519` is recommended for best security and performance
 /// - NIST curves are supported for compatibility
 /// - All curves provide at least 128 bits of security
+///
+/// # Examples
+///
+/// ```rust
+/// use tap_didcomm_core::jwe::types::EcdhCurve;
+///
+/// let curve = EcdhCurve::X25519;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum EcdhCurve {

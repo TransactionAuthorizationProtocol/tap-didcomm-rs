@@ -1,7 +1,7 @@
 //! Message packing and unpacking functionality.
 //!
 //! This module provides functions for packing and unpacking `DIDComm` messages
-//! using different methods (signed, authcrypt, anoncrypt).
+//! using different methods (`Signed`, `AuthCrypt`, `AnonCrypt`).
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -28,9 +28,9 @@ pub struct Recipient {
 /// A `DIDComm` message.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Message {
-    /// The message body
+    /// The message body as a JSON value
     pub body: Value,
-    /// The sender DID
+    /// The sender DID (optional)
     pub from: Option<String>,
     /// The recipient DIDs
     pub to: Vec<String>,
@@ -38,6 +38,12 @@ pub struct Message {
 
 impl Message {
     /// Creates a new message with the given body.
+    ///
+    /// # Arguments
+    /// * `body` - The message body that can be converted into a JSON value
+    ///
+    /// # Returns
+    /// A new `Message` instance with the given body
     #[must_use]
     pub fn new<T: Into<Value>>(body: T) -> Self {
         Message {
@@ -48,6 +54,12 @@ impl Message {
     }
 
     /// Sets the sender DID.
+    ///
+    /// # Arguments
+    /// * `from` - The sender's DID as a string reference
+    ///
+    /// # Returns
+    /// The modified `Message` instance
     #[must_use]
     pub fn from<S: AsRef<str>>(mut self, from: S) -> Self {
         self.from = Some(from.as_ref().to_string());
@@ -55,6 +67,12 @@ impl Message {
     }
 
     /// Adds a recipient DID.
+    ///
+    /// # Arguments
+    /// * `to` - The recipient's DID as a string reference
+    ///
+    /// # Returns
+    /// The modified `Message` instance
     #[must_use]
     pub fn to<S: AsRef<str>>(mut self, to: S) -> Self {
         self.to.push(to.as_ref().to_string());
@@ -62,12 +80,30 @@ impl Message {
     }
 
     /// Gets the message body as a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if the body cannot be serialized to JSON
     fn to_json_string(&self) -> Result<String> {
         serde_json::to_string(&self.body).map_err(Error::Json)
     }
 }
 
 /// Pack a message using the specified packing type.
+///
+/// # Arguments
+/// * `message` - The message to pack
+/// * `plugin` - Plugin providing cryptographic operations
+/// * `packing_type` - Type of packing to use (`Signed`, `AuthCryptV2`, `AnonV2`)
+///
+/// # Returns
+/// The packed message as a base64url-encoded string
+///
+/// # Errors
+/// * `Error::InvalidDIDDocument` - If a DID is invalid or missing when required
+/// * `Error::Base64` - If base64 encoding fails
+/// * `Error::Json` - If JSON serialization fails
+/// * `Error::SigningFailed` - If message signing fails
+/// * `Error::EncryptionFailed` - If message encryption fails
 pub async fn pack_message(
     message: &Message,
     plugin: &dyn DIDCommPlugin,
@@ -93,10 +129,10 @@ pub async fn pack_message(
                     "At least one recipient required for authcrypt".into(),
                 ));
             }
-            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
-            for did in &to_refs {
+            for did in &message.to {
                 validate_did(did)?;
             }
+            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, Some(from))
@@ -109,10 +145,10 @@ pub async fn pack_message(
                     "At least one recipient required for anoncrypt".into(),
                 ));
             }
-            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
-            for did in &to_refs {
+            for did in &message.to {
                 validate_did(did)?;
             }
+            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, None)
@@ -151,10 +187,8 @@ pub async fn unpack_message(
 
     // If not JSON, try to verify as signed message
     if let Some(from) = recipient.as_ref() {
-        let verified = plugin
-            .signer()
-            .verify(&decoded, &decoded, from.as_str())
-            .await?;
+        validate_did(from)?;
+        let verified = plugin.signer().verify(&decoded, &decoded, from).await?;
         if verified {
             let message: Message = serde_json::from_slice(&decoded)?;
             return Ok(message);
@@ -163,10 +197,8 @@ pub async fn unpack_message(
 
     // If not signed, try to decrypt
     if let Some(recipient) = recipient.as_ref() {
-        let decrypted = plugin
-            .encryptor()
-            .decrypt(&decoded, recipient.as_str())
-            .await?;
+        validate_did(recipient)?;
+        let decrypted = plugin.encryptor().decrypt(&decoded, recipient).await?;
         let message: Message = serde_json::from_slice(&decrypted)?;
         return Ok(message);
     }
@@ -192,7 +224,7 @@ pub async fn unpack_message(
 /// - Key resolution fails
 /// - Encryption fails
 /// - Signing fails (if requested)
-pub async fn pack_encrypted<'a>(
+pub async fn pack_encrypted(
     plaintext: &[u8],
     to: &[String],
     from: Option<&str>,
@@ -206,7 +238,7 @@ pub async fn pack_encrypted<'a>(
 
     // Validate recipient DIDs
     for recipient in to {
-        validate_did(recipient.as_str())?;
+        validate_did(recipient)?;
     }
 
     // Validate signer DID if present
@@ -226,7 +258,7 @@ pub async fn pack_encrypted<'a>(
     // Handle signing if requested
     let signed_data = if let Some(signer_did) = sign_by {
         let signer = plugins.get_signer(signer_did).await?;
-        sign_message(plaintext, signer).await?
+        signer.sign(plaintext, signer_did).await?
     } else {
         plaintext.to_vec()
     };
@@ -242,13 +274,11 @@ pub async fn pack_encrypted<'a>(
 
     // Add all recipients
     for recipient in recipients {
-        builder = builder.add_recipient(recipient.did.clone(), recipient.key);
+        builder = builder.add_recipient(recipient.did, recipient.key);
     }
 
     // Build and return the encrypted message
-    let encrypted = builder.plaintext(&signed_data).build().await?;
-
-    Ok(encrypted)
+    builder.plaintext(&signed_data).build().await
 }
 
 #[cfg(test)]
