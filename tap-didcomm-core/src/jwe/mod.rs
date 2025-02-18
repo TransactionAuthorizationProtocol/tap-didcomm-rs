@@ -476,7 +476,7 @@ impl EncryptedMessageBuilder {
     }
 }
 
-/// A DIDComm message
+/// A `DIDComm` message
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Message {
     /// The message body
@@ -487,7 +487,7 @@ pub struct Message {
     pub to: Option<Vec<String>>,
 }
 
-/// Packs a DIDComm message with encryption and/or signing.
+/// Packs A `DIDComm` message with encryption and/or signing.
 ///
 /// # Arguments
 /// * `message` - The message to pack
@@ -560,7 +560,7 @@ pub async fn pack_message(
     }
 }
 
-/// Unpacks a DIDComm message, verifying signatures and decrypting if needed.
+/// Unpacks A `DIDComm` message, verifying signatures and decrypting if needed.
 ///
 /// # Arguments
 /// * `packed` - The packed message to unpack

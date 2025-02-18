@@ -49,15 +49,6 @@ use p256::NistP256;
 use p384::NistP384;
 use p521::NistP521;
 
-/// The size of an AES-256 key in bytes.
-const AES_256_KEY_SIZE: usize = 32;
-
-/// The size of an HMAC-SHA-512 key in bytes.
-const HMAC_SHA512_KEY_SIZE: usize = 64;
-
-/// The size of an authentication tag in bytes.
-const AUTH_TAG_SIZE: usize = 32;
-
 /// Add type aliases for key wrapping
 type KekArray = GenericArray<u8, U32>;
 
