@@ -58,6 +58,14 @@ pub struct EphemeralPublicKey {
 
 impl JweHeader {
     /// Creates a new JWE header for anoncrypt (ECDH-ES+A256KW).
+    ///
+    /// # Arguments
+    /// * `content_encryption` - The content encryption algorithm to use
+    /// * `epk` - The ephemeral public key
+    ///
+    /// # Returns
+    /// A new JWE header for anonymous encryption
+    #[must_use]
     pub fn new_anoncrypt(
         content_encryption: ContentEncryptionAlgorithm,
         epk: EphemeralPublicKey,
@@ -74,6 +82,16 @@ impl JweHeader {
     }
 
     /// Creates a new JWE header for authcrypt (ECDH-1PU+A256KW).
+    ///
+    /// # Arguments
+    /// * `content_encryption` - The content encryption algorithm to use
+    /// * `epk` - The ephemeral public key
+    /// * `skid` - The sender key ID
+    /// * `apu` - Optional agreement PartyUInfo
+    ///
+    /// # Returns
+    /// A new JWE header for authenticated encryption
+    #[must_use]
     pub fn new_authcrypt(
         content_encryption: ContentEncryptionAlgorithm,
         epk: EphemeralPublicKey,
@@ -92,12 +110,19 @@ impl JweHeader {
     }
 
     /// Serializes the header to a base64url-encoded string.
+    ///
+    /// # Errors
+    /// * `Error::Json` - If JSON serialization fails
     pub fn to_string(&self) -> Result<String> {
         let json = serde_json::to_string(self)?;
         Ok(URL_SAFE_NO_PAD.encode(json.as_bytes()))
     }
 
     /// Deserializes a header from a base64url-encoded string.
+    ///
+    /// # Errors
+    /// * `Error::Base64` - If base64 decoding fails
+    /// * `Error::Json` - If JSON parsing fails
     pub fn from_string(s: &str) -> Result<Self> {
         let bytes = URL_SAFE_NO_PAD
             .decode(s)
@@ -108,6 +133,13 @@ impl JweHeader {
 
 impl EphemeralPublicKey {
     /// Creates a new ephemeral public key.
+    ///
+    /// # Arguments
+    /// * `curve` - The ECDH curve to use
+    /// * `public_key` - The raw public key bytes
+    ///
+    /// # Errors
+    /// * `Error::InvalidKeyMaterial` - If the public key is invalid for the specified curve
     pub fn new(curve: EcdhCurve, public_key: &[u8]) -> Result<Self> {
         match curve {
             EcdhCurve::X25519 => {
@@ -159,6 +191,9 @@ impl EphemeralPublicKey {
     }
 
     /// Gets the raw public key bytes.
+    ///
+    /// # Errors
+    /// * `Error::InvalidKeyMaterial` - If the stored public key is invalid
     pub fn raw_public_key(&self) -> Result<Vec<u8>> {
         match self.crv {
             EcdhCurve::X25519 => URL_SAFE_NO_PAD

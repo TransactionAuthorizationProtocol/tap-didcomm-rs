@@ -5,124 +5,136 @@
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::crypto::sign_message;
-use crate::jwe::{EncryptedMessageBuilder, Recipient};
+use crate::error::{Error, Result};
+use crate::jwe::EncryptedMessageBuilder;
+use crate::jwe::{EcdhCurve, JweMessage};
+use crate::plugin::DIDCommPlugin;
 use crate::plugin::DIDCommPlugins;
+use crate::types::PackingType;
 use crate::utils::validate_did;
-use crate::{error::Result, plugin::DIDCommPlugin, types::PackingType, Error};
 
-/// A DIDComm message
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// A recipient for an encrypted message.
+#[derive(Debug, Clone)]
+pub struct Recipient {
+    /// The recipient's DID
+    pub did: String,
+    /// The recipient's encryption key
+    pub key: Vec<u8>,
+}
+
+/// A `DIDComm` message.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Message {
     /// The message body
-    pub body: String,
+    pub body: Value,
     /// The sender DID
     pub from: Option<String>,
     /// The recipient DIDs
-    pub to: Option<Vec<String>>,
+    pub to: Vec<String>,
 }
 
 impl Message {
     /// Creates a new message with the given body.
-    pub fn new(body: impl Into<String>) -> Self {
-        let mut message = Self::default();
-        message.body = body.into().into();
-        message
+    #[must_use]
+    pub fn new<T: Into<Value>>(body: T) -> Self {
+        Message {
+            body: body.into(),
+            from: None,
+            to: Vec::new(),
+        }
     }
 
-    /// Sets the sender of the message.
+    /// Sets the sender DID.
     #[must_use]
-    pub fn from(mut self, from: impl Into<String>) -> Self {
-        self.from = Some(from.into());
+    pub fn from<S: AsRef<str>>(mut self, from: S) -> Self {
+        self.from = Some(from.as_ref().to_string());
         self
     }
 
-    /// Sets the recipients of the message.
+    /// Adds a recipient DID.
     #[must_use]
-    pub fn to(mut self, to: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.to = Some(to.into_iter().map(Into::into).collect());
+    pub fn to<S: AsRef<str>>(mut self, to: S) -> Self {
+        self.to.push(to.as_ref().to_string());
         self
+    }
+
+    /// Gets the message body as a JSON string.
+    fn to_json_string(&self) -> Result<String> {
+        serde_json::to_string(&self.body).map_err(Error::Json)
     }
 }
 
-/// Pack a `DIDComm` message using the specified packing type.
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - Message serialization fails
-/// - Plugin operations (signing/encryption) fail
-/// - Required fields are missing for the chosen packing type
+/// Pack a message using the specified packing type.
 pub async fn pack_message(
     message: &Message,
     plugin: &dyn DIDCommPlugin,
     packing_type: PackingType,
 ) -> Result<String> {
-    let msg_json = serde_json::to_string(message)?;
-
+    let msg_json = message.to_json_string()?;
     match packing_type {
         PackingType::Signed => {
-            if let Some(from) = &message.from {
-                let signature = plugin
-                    .signer()
-                    .sign(msg_json.as_bytes(), from)
-                    .await
-                    .map_err(|e| Error::SigningFailed(e.to_string()))?;
-
-                Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&signature))
-            } else {
-                Err(Error::InvalidDIDDocument(
-                    "Sender DID required for signed messages".into(),
-                ))
-            }
+            let from = message.from.as_deref().ok_or_else(|| {
+                Error::InvalidDIDDocument("Sender DID required for signed messages".into())
+            })?;
+            validate_did(from)?;
+            let signed = plugin.signer().sign(msg_json.as_bytes(), from).await?;
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&signed))
         }
         PackingType::AuthcryptV2 => {
-            let from = message.from.as_ref().ok_or_else(|| {
+            let from = message.from.as_deref().ok_or_else(|| {
                 Error::InvalidDIDDocument("Sender DID required for authcrypt".into())
             })?;
-
-            let to = message.to.as_ref().ok_or_else(|| {
-                Error::InvalidDIDDocument("Recipient DIDs required for authcrypt".into())
-            })?;
-
-            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
-
+            validate_did(from)?;
+            if message.to.is_empty() {
+                return Err(Error::InvalidDIDDocument(
+                    "At least one recipient required for authcrypt".into(),
+                ));
+            }
+            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
+            for did in &to_refs {
+                validate_did(did)?;
+            }
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, Some(from))
-                .await
-                .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
-
+                .await?;
             Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
         }
         PackingType::AnonV2 => {
-            let to = message.to.as_ref().ok_or_else(|| {
-                Error::InvalidDIDDocument("Recipient DIDs required for anoncrypt".into())
-            })?;
-
-            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
-
+            if message.to.is_empty() {
+                return Err(Error::InvalidDIDDocument(
+                    "At least one recipient required for anoncrypt".into(),
+                ));
+            }
+            let to_refs: Vec<&str> = message.to.iter().map(String::as_str).collect();
+            for did in &to_refs {
+                validate_did(did)?;
+            }
             let encrypted = plugin
                 .encryptor()
                 .encrypt(msg_json.as_bytes(), &to_refs, None)
-                .await
-                .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
-
+                .await?;
             Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
         }
     }
 }
 
-/// Unpack a DIDComm message.
+/// Unpack a `DIDComm` message.
+///
+/// # Arguments
+/// * `packed` - The packed message to unpack
+/// * `plugin` - Plugin providing cryptographic operations
+/// * `recipient` - Optional recipient DID to use for decryption
 ///
 /// # Errors
-///
-/// Returns an error if:
-/// - The packed message is not valid base64 or JSON
-/// - Message verification fails
-/// - Message decryption fails (for encrypted messages)
-/// - The message format does not match the expected structure
+/// * `Error::Base64` - If base64 decoding fails
+/// * `Error::Json` - If JSON parsing fails
+/// * `Error::InvalidDIDDocument` - If a DID document is invalid
+/// * `Error::KeyAgreement` - If key agreement fails
+/// * `Error::ContentEncryption` - If content decryption fails
 pub async fn unpack_message(
     packed: &str,
     plugin: &dyn DIDCommPlugin,
@@ -130,7 +142,7 @@ pub async fn unpack_message(
 ) -> Result<Message> {
     let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(packed)
-        .map_err(|e| Error::Base64(format!("Invalid base64: {}", e)))?;
+        .map_err(|e| Error::Base64(format!("Invalid base64: {e}")))?;
 
     // Try to parse as JSON first
     if let Ok(message) = serde_json::from_slice::<Message>(&decoded) {
@@ -141,10 +153,8 @@ pub async fn unpack_message(
     if let Some(from) = recipient.as_ref() {
         let verified = plugin
             .signer()
-            .verify(&decoded, &decoded, from)
-            .await
-            .map_err(|e| Error::VerificationFailed(e.to_string()))?;
-
+            .verify(&decoded, &decoded, from.as_str())
+            .await?;
         if verified {
             let message: Message = serde_json::from_slice(&decoded)?;
             return Ok(message);
@@ -152,13 +162,11 @@ pub async fn unpack_message(
     }
 
     // If not signed, try to decrypt
-    if let Some(recipient) = recipient {
+    if let Some(recipient) = recipient.as_ref() {
         let decrypted = plugin
             .encryptor()
-            .decrypt(&decoded, &recipient)
-            .await
-            .map_err(|e| Error::DecryptionFailed(e.to_string()))?;
-
+            .decrypt(&decoded, recipient.as_str())
+            .await?;
         let message: Message = serde_json::from_slice(&decrypted)?;
         return Ok(message);
     }
@@ -191,32 +199,32 @@ pub async fn pack_encrypted<'a>(
     sign_by: Option<&str>,
     plugins: &impl DIDCommPlugins,
 ) -> Result<Vec<u8>> {
-    // Use ref to avoid moving the value
-    if let Some(ref from_did) = from {
-        // Clone the string for the validation check
-        validate_did(from_did.to_string())?;
+    // Validate sender DID if present
+    if let Some(from_did) = from {
+        validate_did(from_did)?;
     }
 
     // Validate recipient DIDs
     for recipient in to {
-        validate_did(recipient.to_string())?;
+        validate_did(recipient.as_str())?;
+    }
+
+    // Validate signer DID if present
+    if let Some(signer_did) = sign_by {
+        validate_did(signer_did)?;
     }
 
     let mut recipients = Vec::new();
     for to_did in to {
-        // Clone to_did since we need it for multiple operations
-        let to_did = to_did.clone();
-        let recipient_key = plugins.resolve_did(&to_did).await?;
+        let recipient_key = plugins.resolve_did(to_did).await?;
         recipients.push(Recipient {
-            did: to_did,
+            did: to_did.clone(),
             key: recipient_key,
         });
     }
 
     // Handle signing if requested
-    let signed_data = if let Some(ref signer_did) = sign_by {
-        // Clone for validation
-        validate_did(signer_did.to_string())?;
+    let signed_data = if let Some(signer_did) = sign_by {
         let signer = plugins.get_signer(signer_did).await?;
         sign_message(plaintext, signer).await?
     } else {
@@ -227,7 +235,7 @@ pub async fn pack_encrypted<'a>(
     let mut builder = EncryptedMessageBuilder::new();
 
     // Add sender if present
-    if let Some(ref sender_did) = from {
+    if let Some(sender_did) = from {
         let sender_key = plugins.resolve_did(sender_did).await?;
         builder = builder.from(sender_did.to_string(), sender_key);
     }
@@ -247,14 +255,14 @@ pub async fn pack_encrypted<'a>(
 mod tests {
     use super::*;
     use crate::plugin::tests::MockTestPlugin;
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_pack_signed() -> Result<()> {
         let plugin = MockTestPlugin;
-        let mut message = Message::default();
-        message.body = "test".to_string();
-        message.from = Some("did:example:alice".to_string());
-        message.to = Some(vec!["did:example:bob".to_string()]);
+        let message = Message::new(json!("test"))
+            .from("did:example:alice")
+            .to("did:example:bob");
 
         let packed = pack_message(&message, &plugin, PackingType::Signed).await?;
         let unpacked =
@@ -267,10 +275,9 @@ mod tests {
     #[tokio::test]
     async fn test_pack_authcrypt() -> Result<()> {
         let plugin = MockTestPlugin;
-        let mut message = Message::default();
-        message.body = "test".to_string();
-        message.from = Some("did:example:alice".to_string());
-        message.to = Some(vec!["did:example:bob".to_string()]);
+        let message = Message::new(json!("test"))
+            .from("did:example:alice")
+            .to("did:example:bob");
 
         let packed = pack_message(&message, &plugin, PackingType::AuthcryptV2).await?;
         let unpacked =

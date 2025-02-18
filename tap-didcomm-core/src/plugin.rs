@@ -1,8 +1,24 @@
-//! Plugin system for DIDComm operations.
+//! Plugin system for `DIDComm` operations.
 //!
-//! This module provides the core plugin traits that define the interface for
-//! DID resolution, message signing, and encryption operations. Implementations
-//! of these traits can be provided to customize the behavior of DIDComm operations.
+//! This module defines traits that plugins must implement to provide DID resolution
+//! and cryptographic operations. Implementations of these traits can be provided to
+//! customize the behavior of `DIDComm` operations.
+//!
+//! The main traits are:
+//! - [`DIDResolver`] - For resolving DIDs to DID documents
+//! - [`Signer`] - For signing messages
+//! - [`Encryptor`] - For encrypting/decrypting messages
+//!
+//! These can be combined into a single implementation of the
+//! [`DIDCommPlugin`] trait to provide a complete `DIDComm` implementation.
+//!
+//! # Guidelines for plugin implementations
+//!
+//! - Follow `DIDComm` v2 specifications
+//! - Handle errors gracefully
+//! - Document security considerations
+//! - Validate inputs
+//! - Use secure cryptographic primitives
 //!
 //! # Plugin Architecture
 //!
@@ -180,8 +196,8 @@ pub trait Encryptor: Send + Sync {
     async fn decrypt(&self, message: &[u8], recipient: &str) -> Result<Vec<u8>>;
 }
 
-/// A DIDComm plugin that provides DID resolution and cryptographic operations.
-pub trait DIDCommPlugin: Send + Sync {
+/// A `DIDComm` plugin that provides DID resolution and cryptographic operations.
+pub trait DIDCommPlugin: DIDResolver + Signer + Encryptor {
     /// Gets the DID resolver implementation.
     fn resolver(&self) -> &dyn DIDResolver;
 
@@ -227,13 +243,20 @@ pub trait DIDCommPlugins {
     async fn get_signer(&self, did: &str) -> crate::error::Result<Box<dyn Signer>>;
 }
 
-// Test implementations
+/// Test implementations and mock plugins for testing DIDComm functionality.
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use crate::Error;
     use base64::{engine::general_purpose::STANDARD, Engine as _};
 
+    /// A mock plugin implementation for testing that provides simple base64 operations
+    /// as stand-ins for actual cryptographic operations.
+    ///
+    /// This mock implementation:
+    /// - Uses base64 encoding/decoding for encryption/decryption
+    /// - Returns a simple JSON structure for DID resolution
+    /// - Uses base64 encoding for signatures
     pub struct MockTestPlugin;
 
     #[async_trait]

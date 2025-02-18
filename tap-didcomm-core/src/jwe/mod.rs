@@ -46,6 +46,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
@@ -184,7 +185,20 @@ pub struct JweMessage {
 }
 
 impl JweMessage {
-    /// Creates a new JWE message by encrypting the given plaintext.
+    /// Encrypts a message for one or more recipients.
+    ///
+    /// # Arguments
+    /// * `plaintext` - The message data to encrypt
+    /// * `recipient_did` - The DID of the recipient
+    /// * `sender_did` - Optional DID of the sender for authenticated encryption
+    /// * `resolver` - DID resolver implementation
+    /// * `curve` - ECDH curve to use for key agreement
+    ///
+    /// # Errors
+    /// * `Error::InvalidDIDDocument` - If the recipient's DID document is invalid or missing required keys
+    /// * `Error::Header` - If the JWE header cannot be serialized
+    /// * `Error::KeyAgreement` - If key agreement fails
+    /// * `Error::ContentEncryption` - If content encryption fails
     pub async fn encrypt<R: DIDResolver>(
         plaintext: &[u8],
         recipient_did: &str,
@@ -275,7 +289,17 @@ impl JweMessage {
         })
     }
 
-    /// Decrypts the JWE message using the recipient's private key.
+    /// Decrypts a message using the recipient's private key.
+    ///
+    /// # Arguments
+    /// * `recipient_private_key` - The recipient's private key bytes
+    /// * `resolver` - DID resolver implementation
+    ///
+    /// # Errors
+    /// * `Error::Header` - If the JWE header cannot be parsed
+    /// * `Error::KeyAgreement` - If key agreement fails
+    /// * `Error::ContentEncryption` - If content decryption fails
+    /// * `Error::InvalidKeyMaterial` - If the provided private key is invalid
     pub async fn decrypt<R: DIDResolver>(
         &self,
         recipient_private_key: &[u8],
@@ -463,7 +487,19 @@ pub struct Message {
     pub to: Option<Vec<String>>,
 }
 
-/// Pack a message using the specified packing type
+/// Packs a DIDComm message with encryption and/or signing.
+///
+/// # Arguments
+/// * `message` - The message to pack
+/// * `plugin` - Plugin providing cryptographic operations
+/// * `packing_type` - Type of packing to use (signed, authcrypt, anoncrypt)
+///
+/// # Errors
+/// * `Error::InvalidDIDDocument` - If a DID document is invalid or missing required keys
+/// * `Error::Base64` - If base64 encoding/decoding fails
+/// * `Error::Json` - If JSON serialization/deserialization fails
+/// * `Error::KeyAgreement` - If key agreement fails
+/// * `Error::ContentEncryption` - If content encryption fails
 pub async fn pack_message(
     message: &Message,
     plugin: &dyn DIDCommPlugin,
@@ -524,7 +560,19 @@ pub async fn pack_message(
     }
 }
 
-/// Unpack a message
+/// Unpacks a DIDComm message, verifying signatures and decrypting if needed.
+///
+/// # Arguments
+/// * `packed` - The packed message to unpack
+/// * `plugin` - Plugin providing cryptographic operations
+/// * `recipient` - Optional recipient DID to use for decryption
+///
+/// # Errors
+/// * `Error::Base64` - If base64 decoding fails
+/// * `Error::Json` - If JSON parsing fails
+/// * `Error::InvalidDIDDocument` - If a DID document is invalid
+/// * `Error::KeyAgreement` - If key agreement fails
+/// * `Error::ContentEncryption` - If content decryption fails
 pub async fn unpack_message(
     packed: &str,
     plugin: &dyn DIDCommPlugin,
