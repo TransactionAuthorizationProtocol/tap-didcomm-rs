@@ -201,7 +201,7 @@ pub trait DIDCommPlugins {
 
 // Test implementations
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::Error;
     use base64::{engine::general_purpose::STANDARD, Engine as _};

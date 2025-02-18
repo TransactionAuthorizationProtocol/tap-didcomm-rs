@@ -43,12 +43,24 @@ impl MessageId {
     }
 }
 
+impl Default for MessageId {
+    fn default() -> Self {
+        Self::random()
+    }
+}
+
+impl Default for MessageType {
+    fn default() -> Self {
+        Self("https://didcomm.org/message/1.0".to_string())
+    }
+}
+
 /// A complete `DIDComm` message.
 ///
 /// This structure represents a `DIDComm` message with all its components as defined
 /// in the `DIDComm` v2 specification. It includes the message ID, type, sender,
 /// recipients, timestamps, and body content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Message {
     /// The unique identifier for this message
     pub id: MessageId,

@@ -4,12 +4,24 @@
 //! using different methods (signed, authcrypt, anoncrypt).
 
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 
 use crate::crypto::sign_message;
 use crate::jwe::{EncryptedMessageBuilder, Recipient};
 use crate::plugin::DIDCommPlugins;
 use crate::utils::validate_did;
-use crate::{error::Result, plugin::DIDCommPlugin, types::PackingType, Error, Message};
+use crate::{error::Result, plugin::DIDCommPlugin, types::PackingType, Error};
+
+/// A DIDComm message
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Message {
+    /// The message body
+    pub body: String,
+    /// The sender DID
+    pub from: Option<String>,
+    /// The recipient DIDs
+    pub to: Option<Vec<String>>,
+}
 
 /// Pack a `DIDComm` message using the specified packing type.
 ///
@@ -37,19 +49,18 @@ pub async fn pack_message(
 
                 Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&signature))
             } else {
-                Err(Error::InvalidFormat(
+                Err(Error::InvalidDIDDocument(
                     "Sender DID required for signed messages".into(),
                 ))
             }
         }
         PackingType::AuthcryptV2 => {
-            let from = message
-                .from
-                .as_ref()
-                .ok_or_else(|| Error::InvalidFormat("Sender DID required for authcrypt".into()))?;
+            let from = message.from.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("Sender DID required for authcrypt".into())
+            })?;
 
             let to = message.to.as_ref().ok_or_else(|| {
-                Error::InvalidFormat("Recipient DIDs required for authcrypt".into())
+                Error::InvalidDIDDocument("Recipient DIDs required for authcrypt".into())
             })?;
 
             let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
@@ -64,7 +75,7 @@ pub async fn pack_message(
         }
         PackingType::AnonV2 => {
             let to = message.to.as_ref().ok_or_else(|| {
-                Error::InvalidFormat("Recipient DIDs required for anoncrypt".into())
+                Error::InvalidDIDDocument("Recipient DIDs required for anoncrypt".into())
             })?;
 
             let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
@@ -80,7 +91,7 @@ pub async fn pack_message(
     }
 }
 
-/// Unpack a `DIDComm` message.
+/// Unpack a DIDComm message.
 ///
 /// # Errors
 ///
@@ -96,7 +107,7 @@ pub async fn unpack_message(
 ) -> Result<Message> {
     let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(packed)
-        .map_err(|e| Error::InvalidFormat(format!("Invalid base64: {}", e)))?;
+        .map_err(|e| Error::Base64(format!("Invalid base64: {}", e)))?;
 
     // Try to parse as JSON first
     if let Ok(message) = serde_json::from_slice::<Message>(&decoded) {
@@ -104,18 +115,15 @@ pub async fn unpack_message(
     }
 
     // If not JSON, try to verify as signed message
-    if let Some(from) = recipient {
-        let payload = decoded.clone();
-        let signature = decoded;
-
+    if let Some(from) = recipient.as_ref() {
         let verified = plugin
             .signer()
-            .verify(&payload, &signature, &from)
+            .verify(&decoded, &decoded, from)
             .await
             .map_err(|e| Error::VerificationFailed(e.to_string()))?;
 
         if verified {
-            let message: Message = serde_json::from_slice(&payload)?;
+            let message: Message = serde_json::from_slice(&decoded)?;
             return Ok(message);
         }
     }
@@ -132,7 +140,7 @@ pub async fn unpack_message(
         return Ok(message);
     }
 
-    Err(Error::InvalidFormat("Unable to unpack message".into()))
+    Err(Error::InvalidDIDDocument("Unable to unpack message".into()))
 }
 
 pub async fn pack_encrypted<'a>(
@@ -197,7 +205,7 @@ pub async fn pack_encrypted<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::MockTestPlugin;
+    use crate::plugin::tests::MockTestPlugin;
 
     #[tokio::test]
     async fn test_pack_signed() -> Result<()> {
