@@ -46,10 +46,11 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
-use crate::plugin::DIDResolver;
+use crate::plugin::{DIDCommPlugin, DIDResolver};
 use algorithms::*;
 
 pub mod algorithms;
@@ -59,6 +60,17 @@ pub mod types;
 // Re-export commonly used types
 pub use self::header::{EphemeralPublicKey, JweHeader};
 pub use self::types::{ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm};
+
+/// Message packing types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackingType {
+    /// Signed message
+    Signed,
+    /// Authenticated encryption
+    AuthcryptV2,
+    /// Anonymous encryption
+    AnonV2,
+}
 
 /// A key used for encryption operations.
 ///
@@ -158,7 +170,7 @@ impl Default for EncryptionConfig {
 ///
 /// This represents a JWE in either JSON Serialization or Compact
 /// Serialization format, with support for multiple recipients.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JweMessage {
     /// Protected header (base64url encoded)
     pub protected: String,
@@ -441,6 +453,122 @@ impl EncryptedMessageBuilder {
     }
 }
 
+/// A DIDComm message
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Message {
+    /// The message body
+    pub body: String,
+    /// The sender DID
+    pub from: Option<String>,
+    /// The recipient DIDs
+    pub to: Option<Vec<String>>,
+}
+
+/// Pack a message using the specified packing type
+pub async fn pack_message(
+    message: &Message,
+    plugin: &dyn DIDCommPlugin,
+    packing_type: PackingType,
+) -> Result<String> {
+    let msg_json = serde_json::to_string(message)?;
+
+    match packing_type {
+        PackingType::Signed => {
+            if let Some(from) = &message.from {
+                let signature = plugin
+                    .signer()
+                    .sign(msg_json.as_bytes(), from)
+                    .await
+                    .map_err(|e| Error::SigningFailed(e.to_string()))?;
+
+                Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&signature))
+            } else {
+                Err(Error::InvalidDIDDocument(
+                    "Sender DID required for signed messages".into(),
+                ))
+            }
+        }
+        PackingType::AuthcryptV2 => {
+            let from = message.from.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("Sender DID required for authcrypt".into())
+            })?;
+
+            let to = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("Recipient DIDs required for authcrypt".into())
+            })?;
+
+            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
+
+            let encrypted = plugin
+                .encryptor()
+                .encrypt(msg_json.as_bytes(), &to_refs, Some(from))
+                .await
+                .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
+
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
+        }
+        PackingType::AnonV2 => {
+            let to = message.to.as_ref().ok_or_else(|| {
+                Error::InvalidDIDDocument("Recipient DIDs required for anoncrypt".into())
+            })?;
+
+            let to_refs: Vec<&str> = to.iter().map(|s| s.as_str()).collect();
+
+            let encrypted = plugin
+                .encryptor()
+                .encrypt(msg_json.as_bytes(), &to_refs, None)
+                .await
+                .map_err(|e| Error::EncryptionFailed(e.to_string()))?;
+
+            Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&encrypted))
+        }
+    }
+}
+
+/// Unpack a message
+pub async fn unpack_message(
+    packed: &str,
+    plugin: &dyn DIDCommPlugin,
+    recipient: Option<String>,
+) -> Result<Message> {
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(packed)
+        .map_err(|e| Error::Base64(e.to_string()))?;
+
+    // Try to parse as JSON first
+    if let Ok(message) = serde_json::from_slice::<Message>(&decoded) {
+        return Ok(message);
+    }
+
+    // If not JSON, try to verify as signed message
+    if let Some(from) = recipient.as_ref() {
+        let verified = plugin
+            .signer()
+            .verify(&decoded, &decoded, from)
+            .await
+            .map_err(|e| Error::VerificationFailed(e.to_string()))?;
+
+        if verified {
+            let message: Message = serde_json::from_slice(&decoded)?;
+            return Ok(message);
+        }
+    }
+
+    // If not signed, try to decrypt
+    if let Some(recipient) = recipient {
+        let decrypted = plugin
+            .encryptor()
+            .decrypt(&decoded, &recipient)
+            .await
+            .map_err(|e| Error::DecryptionFailed(e.to_string()))?;
+
+        let message: Message = serde_json::from_slice(&decrypted)?;
+        return Ok(message);
+    }
+
+    Err(Error::InvalidDIDDocument("Unable to unpack message".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,17 +640,18 @@ mod tests {
     #[test]
     fn test_jwe_header_serde() {
         let header = JweHeader {
-            alg: "ECDH-ES+A256KW".to_string(),
-            enc: "A256GCM".to_string(),
+            alg: KeyAgreementAlgorithm::EcdhEsA256kw,
+            enc: ContentEncryptionAlgorithm::A256Gcm,
             epk: Some(EphemeralPublicKey {
                 kty: "OKP".to_string(),
-                crv: "X25519".to_string(),
+                crv: EcdhCurve::X25519,
                 x: "base64url".to_string(),
                 y: None,
             }),
             skid: Some("did:example:123#key-1".to_string()),
             apu: Some("base64url".to_string()),
             apv: Some("base64url".to_string()),
+            additional: HashMap::new(),
         };
 
         let serialized = serde_json::to_string(&header).unwrap();
