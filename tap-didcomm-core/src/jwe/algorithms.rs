@@ -256,7 +256,13 @@ fn encrypt_aes_gcm(
     let cipher = Aes256Gcm::new(key.into());
 
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| Error::ContentEncryption(format!("AES-GCM encryption failed: {}", e)))?;
 
     // Split ciphertext and tag
@@ -318,7 +324,13 @@ pub fn decrypt_aes_gcm(
     ciphertext_with_tag.extend_from_slice(tag);
 
     cipher
-        .decrypt(nonce, ciphertext_with_tag.as_ref())
+        .decrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: ciphertext_with_tag.as_ref(),
+                aad,
+            },
+        )
         .map_err(|e| Error::ContentEncryption(format!("AES-GCM decryption failed: {}", e)))
 }
 
@@ -361,7 +373,13 @@ pub fn encrypt_xchacha20poly1305(
     let nonce = chacha20poly1305::Nonce::from_slice(nonce);
 
     cipher
-        .encrypt(nonce, plaintext.as_ref())
+        .encrypt(
+            nonce,
+            chacha20poly1305::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| Error::ContentEncryption(e.to_string()))
         .map(|ciphertext| {
             let tag = ciphertext[ciphertext.len() - 16..].to_vec();
@@ -421,7 +439,13 @@ pub fn decrypt_xchacha20poly1305(
     ciphertext_with_tag.extend_from_slice(tag);
 
     cipher
-        .decrypt(nonce, ciphertext_with_tag.as_ref())
+        .decrypt(
+            nonce,
+            chacha20poly1305::aead::Payload {
+                msg: ciphertext_with_tag.as_ref(),
+                aad,
+            },
+        )
         .map_err(|e| Error::ContentEncryption(e.to_string()))
 }
 

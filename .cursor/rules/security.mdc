@@ -2,6 +2,7 @@
 description: Security rules
 globs: *.rs, *.ts
 ---
+
 ## Security
 - Follow cryptographic best practices
 - Minimize dependencies
@@ -10,3 +11,52 @@ globs: *.rs, *.ts
 - Use secure random number generation
 - Validate all inputs
 - Test security-critical code thoroughly
+
+## Cryptographic Operations
+- Always use constant-time operations for cryptographic comparisons
+- Ensure proper zeroization of sensitive key material
+- Use secure random number generation for all random values
+- Prevent nonce reuse in all encryption operations
+- Validate all key lengths and formats before use
+- Handle errors appropriately without leaking sensitive information
+
+## AEAD Cipher Usage
+- Always use the AAD parameter in AEAD ciphers (AES-GCM, ChaCha20-Poly1305)
+- Pass AAD through the Payload struct to ensure proper authentication
+- Verify authentication tags in constant time
+- Keep AAD separate from the message payload
+- Include all relevant context data in AAD
+- Test both successful authentication and tampering scenarios
+
+## Key Management
+- Validate all key lengths before use
+- Use appropriate key derivation functions (HKDF)
+- Implement proper key wrapping for key transport
+- Use ephemeral keys where appropriate
+- Properly handle key compression/decompression
+- Test key agreement with both compressed and uncompressed formats
+
+## Testing Requirements
+- Test all cryptographic operations with known test vectors
+- Include tests for key validation
+- Test authentication failure scenarios
+- Verify constant-time operations
+- Test padding validation
+- Include tests for all error conditions
+- Verify proper AAD handling in AEAD operations
+
+## Error Handling
+- Use specific error types for different cryptographic failures
+- Avoid timing side-channels in error handling
+- Provide clear but safe error messages
+- Handle all possible error conditions
+- Test error paths thoroughly
+- Maintain constant-time operations in error cases
+
+## Implementation Guidelines
+- Follow RustCrypto traits and conventions
+- Use type system to enforce correct usage
+- Implement proper trait bounds
+- Use constant-time comparison functions
+- Properly handle generic array types
+- Maintain clear separation of concerns
