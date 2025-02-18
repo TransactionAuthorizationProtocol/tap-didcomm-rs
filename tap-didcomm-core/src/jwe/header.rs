@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-use super::{ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm};
+use super::types::{ContentEncryptionAlgorithm, EcdhCurve, KeyAgreementAlgorithm};
 use crate::error::{Error, Result};
 
 /// The protected header of a JWE.
@@ -99,7 +99,9 @@ impl JweHeader {
 
     /// Deserializes a header from a base64url-encoded string.
     pub fn from_string(s: &str) -> Result<Self> {
-        let bytes = URL_SAFE_NO_PAD.decode(s).map_err(Error::Base64)?;
+        let bytes = URL_SAFE_NO_PAD
+            .decode(s)
+            .map_err(|e| Error::Base64(e.to_string()))?;
         serde_json::from_slice(&bytes).map_err(Error::Json)
     }
 }
@@ -161,18 +163,18 @@ impl EphemeralPublicKey {
         match self.crv {
             EcdhCurve::X25519 => URL_SAFE_NO_PAD
                 .decode(&self.x)
-                .map_err(|e| Error::Base64("Failed to decode X25519 public key")),
+                .map_err(|e| Error::Base64(e.to_string())),
             EcdhCurve::P256 | EcdhCurve::P384 | EcdhCurve::P521 => {
                 let x = URL_SAFE_NO_PAD
                     .decode(&self.x)
-                    .map_err(|e| Error::Base64("Failed to decode x coordinate"))?;
+                    .map_err(|e| Error::Base64(e.to_string()))?;
 
                 let y = self.y.as_ref().ok_or_else(|| {
                     Error::InvalidKeyMaterial("Missing y coordinate for NIST curve".to_string())
                 })?;
                 let y = URL_SAFE_NO_PAD
                     .decode(y)
-                    .map_err(|e| Error::Base64("Failed to decode y coordinate"))?;
+                    .map_err(|e| Error::Base64(e.to_string()))?;
 
                 let mut key = Vec::with_capacity(1 + x.len() + y.len());
                 key.push(0x04); // Uncompressed point format
@@ -195,8 +197,10 @@ impl FromStr for JweHeader {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let bytes = URL_SAFE_NO_PAD.decode(s)?;
-        serde_json::from_slice(&bytes).map_err(Error::Serialization)
+        let bytes = URL_SAFE_NO_PAD
+            .decode(s)
+            .map_err(|e| Error::Base64(e.to_string()))?;
+        serde_json::from_slice(&bytes).map_err(Error::Json)
     }
 }
 
@@ -245,7 +249,7 @@ mod tests {
         let header = JweHeader::new_anoncrypt(ContentEncryptionAlgorithm::A256Gcm, epk);
 
         let encoded = header.to_string().unwrap();
-        let decoded = JweHeader::from_string(&encoded).unwrap();
+        let decoded = JweHeader::from_str(&encoded).unwrap();
 
         assert_eq!(decoded.alg, header.alg);
         assert_eq!(decoded.enc, header.enc);

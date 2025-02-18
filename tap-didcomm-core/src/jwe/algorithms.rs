@@ -156,7 +156,7 @@ fn x25519_key_agreement(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>
 
 /// Generates an X25519 ephemeral keypair
 fn generate_x25519_ephemeral() -> (Vec<u8>, Vec<u8>) {
-    let secret = StaticSecret::new(OsRng);
+    let secret = StaticSecret::random_from_rng(OsRng);
     let public = PublicKey::from(&secret);
 
     (secret.to_bytes().to_vec(), public.as_bytes().to_vec())
@@ -245,7 +245,7 @@ pub fn unwrap_key(kek: &[u8], wrapped: &[u8]) -> Result<Vec<u8>> {
 /// Returns an error if:
 /// - The key or nonce length is invalid
 /// - Encryption fails
-fn encrypt_aes_gcm(
+pub fn encrypt_aes_gcm(
     key: &[u8],
     nonce: &[u8],
     aad: &[u8],
